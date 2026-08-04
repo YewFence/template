@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly template_root="$(git -C "${script_dir}/.." rev-parse --show-toplevel)"
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/apply-template <repository-path>
+
+Apply the committed template snapshot to an existing Git repository as staged
+changes. The target repository must have a clean worktree.
+EOF
+}
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+is_source_only() {
+  case "$1" in
+    .gitattributes | .gitmodules | .gitignore | AGENTS.md | AGENTS.* | README.md | README.* | LICENSE | LICENSE.* | LICENCE | LICENCE.* | COPYING | COPYING.* | NOTICE | NOTICE.* | CODEOWNERS | .github/CODEOWNERS | docs/CODEOWNERS | scripts/apply-template)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+require_clean_repository() {
+  local repository=$1
+  local label=$2
+
+  [[ -z "$(git -C "${repository}" status --porcelain --untracked-files=normal)" ]] ||
+    die "${label} repository has uncommitted or untracked changes: ${repository}"
+}
+
+require_idle_repository() {
+  local repository=$1
+  local git_path
+
+  for git_path in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
+    [[ ! -e "$(git -C "${repository}" rev-parse --path-format=absolute --git-path "${git_path}")" ]] ||
+      die "target repository already has a Git operation in progress: ${git_path}"
+  done
+}
+
+merge_gitignore() {
+  local repository=$1
+  local template_revision=$2
+  local target_file="${repository}/.gitignore"
+  local line
+  local added_header=false
+
+  git -C "${template_root}" cat-file -e "${template_revision}:.gitignore" 2>/dev/null || return 0
+  [[ ! -L "${target_file}" ]] || die "refusing to update symlinked .gitignore: ${target_file}"
+
+  if [[ ! -e "${target_file}" ]]; then
+    git -C "${template_root}" show "${template_revision}:.gitignore" >"${target_file}"
+    git -C "${repository}" add -- .gitignore
+    return 0
+  fi
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    [[ -n "${line}" ]] || continue
+    grep -Fqx -- "${line}" "${target_file}" && continue
+
+    if [[ "${added_header}" == false ]]; then
+      printf '\n# Engineering project template\n' >>"${target_file}"
+      added_header=true
+    fi
+    printf '%s\n' "${line}" >>"${target_file}"
+  done < <(git -C "${template_root}" show "${template_revision}:.gitignore")
+
+  if [[ "${added_header}" == true ]]; then
+    git -C "${repository}" add -- .gitignore
+  fi
+}
+
+if [[ $# -ne 1 ]] || [[ $1 == --help ]] || [[ $1 == -h ]]; then
+  usage
+  [[ $# -eq 1 ]] && exit 0
+  exit 2
+fi
+
+git -C "$1" rev-parse --git-dir >/dev/null 2>&1 || die "not a Git repository: $1"
+readonly target_root="$(git -C "$1" rev-parse --show-toplevel)"
+readonly template_commit="$(git -C "${template_root}" rev-parse HEAD)"
+
+[[ "${target_root}" != "${template_root}" ]] || die 'target repository is the template repository'
+git -C "${target_root}" rev-parse --verify HEAD >/dev/null 2>&1 || die 'target repository has no commits'
+require_clean_repository "${target_root}" 'target'
+require_idle_repository "${target_root}"
+[[ ! -L "${target_root}/.gitignore" ]] ||
+  die "refusing to update symlinked .gitignore: ${target_root}/.gitignore"
+
+readonly temporary_index="$(mktemp "${TMPDIR:-/tmp}/apply-template-index.XXXXXX")"
+cleanup() {
+  rm -f -- "${temporary_index}"
+}
+trap cleanup EXIT
+
+# Fetching preserves file modes and symlinks without copying the template's refs.
+git -C "${target_root}" fetch --quiet --no-tags --no-write-fetch-head "${template_root}" "${template_commit}"
+rm -f -- "${temporary_index}"
+GIT_INDEX_FILE="${temporary_index}" git -C "${target_root}" read-tree "${template_commit}"
+
+while IFS= read -r -d '' tree_entry; do
+  entry_metadata="${tree_entry%%$'\t'*}"
+  path="${tree_entry#*$'\t'}"
+  mode="${entry_metadata%% *}"
+  if [[ "${mode}" == 160000 ]] || is_source_only "${path}"; then
+    GIT_INDEX_FILE="${temporary_index}" git -C "${target_root}" update-index --force-remove -- "${path}"
+  fi
+done < <(git -C "${template_root}" ls-tree -rz "${template_commit}")
+
+readonly snapshot_tree="$(GIT_INDEX_FILE="${temporary_index}" git -C "${target_root}" write-tree)"
+readonly empty_tree="$(git -C "${target_root}" mktree </dev/null)"
+
+# An empty merge base preserves target-only files and reports overlapping paths
+# as add/add conflicts without attaching the template's history to the target.
+git -C "${target_root}" read-tree -m -u "${empty_tree}" HEAD "${snapshot_tree}"
+
+merge_gitignore "${target_root}" "${template_commit}"
+
+apply_status=0
+git -C "${target_root}" diff --quiet --diff-filter=U -- || apply_status=$?
+
+printf '\nTemplate snapshot applied at %s.\n' "${template_commit}"
+if [[ ${apply_status} -ne 0 ]]; then
+  printf 'Resolve these index conflicts, then stage the resolutions:\n'
+  git -C "${target_root}" diff --name-only --diff-filter=U | sed 's/^/  /'
+else
+  printf 'Git found no file conflicts.\n'
+fi
+cat <<'EOF'
+
+Review before committing, especially .github/workflows, mise.toml, lockfiles,
+renovate.json, and release configuration.
+EOF
+
+printf '  git -C %q status\n' "${target_root}"
+printf '  git -C %q diff --cached\n' "${target_root}"
+printf '  git -C %q diff --check\n' "${target_root}"
+printf '\nRecord this provenance trailer in the eventual commit message:\n\n'
+printf '  Template-Commit: %s\n' "${template_commit}"
+printf '\nTo cancel the entire application and discard its changes, run:\n\n'
+printf '  git -C %q reset --hard HEAD\n' "${target_root}"
+
+exit "${apply_status}"

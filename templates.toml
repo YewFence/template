@@ -1,0 +1,7 @@
+version = 1
+
+[templates.common]
+
+[templates.go-cli]
+
+[templates.rust]

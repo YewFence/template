@@ -1,0 +1,151 @@
+[settings]
+lockfile = true
+env_shell_expand = true
+minimum_release_age = "3d"
+
+[tools]
+# https://nodejs.org/
+node = "26"
+# https://github.com/jdx/aube
+aube = "1"
+# https://github.com/jdx/hk
+hk = "1"
+# https://github.com/suzuki-shunsuke/nllint
+"github:suzuki-shunsuke/nllint" = "1"
+# https://github.com/suzuki-shunsuke/pinact
+pinact = "4"
+# https://github.com/crate-ci/typos
+typos = "1.48.0"
+betterleaks = "1"
+actionlint = "1"
+
+[vars]
+nllint_excludes = ""
+# example: exclude file
+# nllint_excludes = "':(top,exclude)file'"
+
+[env]
+# the minimum release age of github actions in days
+PINACT_MIN_AGE = "3"
+PINACT_GITHUB_TOKEN = { value = "${MISE_GITHUB_TOKEN:-}", redact = true }
+
+[tasks."deps:check"]
+description = "[PLACEHOLDER] Check project dependency metadata and lockfiles"
+run = 'echo "[PLACEHOLDER] Replace deps:check with the project dependency check, such as cargo check --locked or go mod tidy -diff followed by go mod verify"'
+
+[tasks."deps:fix"]
+description = "[PLACEHOLDER] Normalize project dependency metadata and lockfiles"
+run = 'echo "[PLACEHOLDER] Replace deps:fix with the project dependency fix, such as go mod tidy or an equivalent package-manager command"'
+
+[tasks."deps:update"]
+description = "[PLACEHOLDER] Update project dependencies"
+run = 'echo "[PLACEHOLDER] Replace deps:update with the project dependency update command, such as cargo update or aube update"'
+
+[tasks.test]
+description = "[PLACEHOLDER] Run project tests"
+run = 'echo "[PLACEHOLDER] Replace test with the project test command, such as cargo test or go test ./..."'
+
+[tasks."fmt:check"]
+description = "[PLACEHOLDER] Check project-specific formatting"
+run = 'echo "[PLACEHOLDER] Replace fmt:check with the project formatting check, such as cargo fmt --check or golangci-lint fmt --diff"'
+
+[tasks."fmt:fix"]
+description = "[PLACEHOLDER] Fix project-specific formatting"
+run = 'echo "[PLACEHOLDER] Replace fmt:fix with the project formatting command, such as cargo fmt or golangci-lint fmt"'
+
+[tasks.lint]
+description = "[PLACEHOLDER] Run project-specific lint checks"
+run = 'echo "[PLACEHOLDER] Replace lint with the project lint command, such as cargo clippy or golangci-lint run"'
+
+[tasks.build]
+description = "[PLACEHOLDER] Build the project"
+run = 'echo "[PLACEHOLDER] Replace build with the project build command, such as cargo build --release or go build ./..."'
+
+[tasks."build:check"]
+description = "[PLACEHOLDER] Check whether the project builds"
+run = 'echo "[PLACEHOLDER] Replace build:check with a compile-only check, such as cargo check or an equivalent project command"'
+
+[tasks.audit]
+description = "[PLACEHOLDER] Audit project dependencies for known vulnerabilities"
+run = 'echo "[PLACEHOLDER] Replace audit with the project security audit, such as cargo audit or govulncheck ./..."'
+
+[tasks."leaks:check"]
+description = "Run betterleaks checks"
+run = "betterleaks git . --pre-commit --redact --no-banner"
+
+[tasks."typos:check"]
+description = "Run Typos Lint"
+run = "typos"
+
+[tasks."typos:fix"]
+description = "Fix Typos Lint"
+run = "typos --write-changes"
+
+[tasks."newline:check"]
+description = "Check final newlines and surrounding whitespace in tracked text files"
+run = "git grep -Ilz '' -- . {{ vars.nllint_excludes }} | xargs -0 nllint --trim-space"
+
+[tasks."newline:fix"]
+description = "Fix final newlines and surrounding whitespace in tracked text files"
+run = "git grep -Ilz '' -- . {{ vars.nllint_excludes }} | xargs -0 nllint --fix --trim-space"
+
+[tasks.check]
+description = "Run read-only project and repository checks"
+run = [
+  { tasks = [ "deps:check", "newline:check", "typos:check", "fmt:check", "build:check" ] },
+  { task = "leaks:check" },
+  { task = "actions:check" },
+  { task = "lint" },
+  { task = "test" }
+]
+alias = "c"
+
+[tasks.fix]
+description = "Fix project and repository formatting"
+run = [
+  { task = "deps:fix" },
+  { task = "newline:fix" },
+  { task = "typos:fix" },
+  { task = "fmt:fix" }
+]
+alias = "f"
+
+[tasks.'hooks:install']
+description = "Install Git hooks managed by hk"
+run = "hk install"
+
+[tasks."actions:check"]
+description = "Run actionlint"
+depends = ["actions:pin-offline:check"]
+run = "actionlint"
+
+[tasks.'actions:update']
+description = "Update GitHub Action versions and pin to commit hashes"
+run = "pinact run --update"
+
+[tasks.'actions:pin-offline:check']
+description = "Check GitHub Action versions and pin to commit hashes"
+run = "unset PINACT_MIN_AGE && pinact run --fix=false --no-api"
+
+[tasks.'docs:install']
+description = "Install documentation site dependencies"
+dir = "docs"
+run = "aube install --frozen-lockfile"
+
+[tasks.'docs:dev']
+description = "Start the VitePress documentation site"
+depends = ["docs:install"]
+dir = "docs"
+run = "aube run dev"
+
+[tasks.'docs:build']
+description = "Build the VitePress documentation site"
+depends = ["docs:install"]
+dir = "docs"
+run = "aube run build"
+
+[tasks.'docs:preview']
+description = "Preview the VitePress documentation site"
+depends = ["docs:install"]
+dir = "docs"
+run = "aube run preview"

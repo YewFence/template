@@ -1,0 +1,39 @@
+[settings]
+lockfile = true
+
+[tools]
+python = "3.14.6"
+uv = "0.12.1"
+
+[tasks.render]
+description = "Render one template or all templates"
+usage = '''
+arg "[template]" help="Template to render; defaults to all" {
+  choices "common" "go-cli" "rust"
+}
+'''
+run = '''
+uv run --project tools/template-tool render-template{% if usage.template %} "{{ usage.template }}"{% endif %} --root .
+'''
+
+[tasks."sync:check"]
+description = "Check one generated template or all generated templates"
+usage = '''
+arg "[template]" help="Template to check; defaults to all" {
+  choices "common" "go-cli" "rust"
+}
+'''
+run = '''
+uv run --project tools/template-tool render-template --check{% if usage.template %} "{{ usage.template }}"{% endif %} --root .
+'''
+
+[tasks.check]
+description = "Run one template's checks or all template checks"
+usage = '''
+arg "[template]" help="Template to check; defaults to all" {
+  choices "common" "go-cli" "rust"
+}
+'''
+run = '''
+uv run --project tools/template-tool check-templates{% if usage.template %} "{{ usage.template }}"{% endif %} --root .
+'''

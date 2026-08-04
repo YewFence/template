@@ -1,0 +1,1 @@
+This repository is a language-neutral engineering project template. Prefer simple, direct changes that keep the shared workflow easy to understand and adapt. Keep project-language behavior behind the stable mise task interface, and mark unfinished project-specific behavior with explicit `[PLACEHOLDER]` messages.

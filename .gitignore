@@ -1,0 +1,8 @@
+.cache/
+.venv/
+__pycache__/
+*.py[cod]
+
+/common-template/
+/go-cli-template/
+/rust-template/

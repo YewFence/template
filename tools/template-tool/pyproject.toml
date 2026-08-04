@@ -1,0 +1,20 @@
+[project]
+name = "template-tool"
+version = "0.1.0"
+description = "Render and validate YewFence project templates"
+authors = [
+    { name = "YewFence", email = "hello@yewfence.dev" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "jinja2>=3.1.6",
+]
+
+[project.scripts]
+template-tool = "template_tool.cli:main"
+render-template = "template_tool.cli:render_main"
+check-templates = "template_tool.cli:check_main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
