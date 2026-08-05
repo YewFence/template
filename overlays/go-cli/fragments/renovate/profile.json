@@ -1,0 +1,34 @@
+{
+  "enabledManagers": ["github-actions", "npm", "gomod", "mise"],
+  "packageRules": [
+    {
+      "description": "Tidy Go modules after dependency updates.",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["require", "indirect"],
+      "enabled": true,
+      "groupName": "Go modules",
+      "postUpdateOptions": ["gomodTidy"],
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "gomod-deps"
+    },
+    {
+      "description": "Group Go toolchain updates.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["go"],
+      "groupName": "Go toolchain",
+      "rangeStrategy": "update-lockfile",
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "go-deps"
+    },
+    {
+      "description": "Allow Renovate to bump the Go directive.",
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["go"],
+      "matchDepTypes": ["golang"],
+      "groupName": "Go toolchain",
+      "rangeStrategy": "bump",
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "go-deps"
+    }
+  ]
+}

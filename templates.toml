@@ -39,6 +39,10 @@ hints = [
  maintenance_tools = ["overlay:mise/ci/maintenance.toml.j2"]
  audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
  release_package = ["overlay:mise/ci/package.toml.j2"]
+ [templates.go-cli.slots.".github/workflows/ci.yml"]
+ project_cache = ["overlay:workflows/ci/project-cache.yml.j2"]
+ audit_cache = ["overlay:workflows/ci/audit-cache.yml.j2"]
+ docs_cache = ["overlay:workflows/ci/docs-cache.yml.j2"]
 
 [templates.rust]
  [templates.rust.locks]
@@ -53,3 +57,6 @@ hints = [
  audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
  release_version_tasks = ["overlay:mise/ci/release-version.toml.j2"]
  release_package = ["overlay:mise/ci/package.toml.j2"]
+ [templates.rust.slots.".github/workflows/ci.yml"]
+ project_cache = ["overlay:workflows/ci/project-cache.yml.j2"]
+ audit_cache = ["overlay:workflows/ci/audit-cache.yml.j2"]

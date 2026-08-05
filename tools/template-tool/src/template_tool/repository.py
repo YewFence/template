@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+import json
 import os
 import posixpath
 import shutil
@@ -66,6 +67,7 @@ class TemplateRepository:
         self.root = Path(root).resolve()
         self.config_path = self.root / "templates.toml"
         self.shared_root = self.root / "shared"
+        self.config_root = self.root / "config"
         self.overlays_root = self.root / "overlays"
         self.templates_root = self.root / "templates"
         self._profiles = self._load_profiles()
@@ -104,6 +106,43 @@ class TemplateRepository:
             self._remove_path(staged)
             raise
         return RenderResult(template)
+
+    def render_repository(self) -> RenderResult:
+        rendered = self._render_renovate_config(
+            self.config_root / "renovate" / "monorepo.json"
+        )
+        if rendered is None:
+            return RenderResult("repository")
+        target = self.root / "renovate.json"
+        temporary = self.root / f".renovate.json.{uuid.uuid4().hex}"
+        temporary.write_bytes(rendered)
+        temporary.chmod(0o644)
+        os.replace(temporary, target)
+        return RenderResult("repository")
+
+    def check_repository(self) -> RenderResult:
+        rendered = self._render_renovate_config(
+            self.config_root / "renovate" / "monorepo.json"
+        )
+        if rendered is None:
+            return RenderResult("repository")
+        target = self.root / "renovate.json"
+        expected = TreeEntry("file", False, rendered)
+        if target.is_symlink() or not target.is_file():
+            return RenderResult("repository", ("missing or invalid path: renovate.json",))
+        actual = TreeEntry(
+            "file",
+            bool(target.stat(follow_symlinks=False).st_mode & stat.S_IXUSR),
+            target.read_bytes(),
+        )
+        if expected == actual:
+            return RenderResult("repository")
+        differences = tuple(
+            self._content_diff(PurePosixPath("renovate.json"), expected, actual)
+        )
+        if expected.executable != actual.executable:
+            differences = ("executable bit mismatch: renovate.json", *differences)
+        return RenderResult("repository", differences)
 
     def check(self, template: str) -> RenderResult:
         profile = self._profile(template)
@@ -330,6 +369,19 @@ class TemplateRepository:
                     overlay_root,
                 )
 
+            renovate = self._render_renovate_config(
+                overlay_root / "fragments" / "renovate" / "profile.json"
+            )
+            renovate_path = PurePosixPath("renovate.json")
+            if renovate is not None:
+                if renovate_path in sources:
+                    raise TemplateError(
+                        f"template {profile.name!r} has a source that conflicts with the Renovate module"
+                    )
+                destination = staged / "renovate.json"
+                destination.write_bytes(renovate)
+                destination.chmod(0o644)
+
             unused_bindings = set(profile.slots) - {
                 path for path, source in sources.items() if source.kind == "layout"
             }
@@ -342,6 +394,44 @@ class TemplateRepository:
         except Exception:
             self._remove_path(staged)
             raise
+
+    def _render_renovate_config(self, profile_path: Path) -> bytes | None:
+        base_path = self.shared_root / "renovate" / "base.json"
+        if not base_path.exists():
+            return None
+        base = self._load_json_object(base_path, "Renovate base")
+        profile = self._load_json_object(profile_path, "Renovate profile")
+        base_rules = base.pop("packageRules", [])
+        profile_rules = profile.pop("packageRules", [])
+        self._validate_package_rules(base_rules, base_path)
+        self._validate_package_rules(profile_rules, profile_path)
+        duplicated = set(base) & set(profile)
+        if duplicated:
+            keys = ", ".join(sorted(duplicated))
+            raise TemplateError(
+                f"Renovate base and profile duplicate top-level keys: {keys}"
+            )
+        rendered = base | profile
+        if base_rules or profile_rules:
+            rendered["packageRules"] = [*base_rules, *profile_rules]
+        return (json.dumps(rendered, indent=2, ensure_ascii=False) + "\n").encode()
+
+    @staticmethod
+    def _load_json_object(path: Path, label: str) -> dict[str, object]:
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise TemplateError(f"cannot load {label} {path}: {error}") from error
+        if not isinstance(value, dict):
+            raise TemplateError(f"{label} must be a JSON object: {path}")
+        return value
+
+    @staticmethod
+    def _validate_package_rules(rules: object, path: Path) -> None:
+        if not isinstance(rules, list) or not all(
+            isinstance(rule, dict) for rule in rules
+        ):
+            raise TemplateError(f"packageRules must be an array of objects: {path}")
 
     def _select_sources(
         self, profile: TemplateProfile, overlay_root: Path

@@ -1,0 +1,13 @@
+{
+  "enabledManagers": ["cargo", "github-actions", "npm", "mise"],
+  "packageRules": [
+    {
+      "description": "Group Cargo dependency updates.",
+      "matchManagers": ["cargo"],
+      "groupName": "Cargo dependencies",
+      "rangeStrategy": "bump",
+      "semanticCommitType": "chore",
+      "semanticCommitScope": "cargo-deps"
+    }
+  ]
+}

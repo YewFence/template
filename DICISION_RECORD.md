@@ -25,3 +25,37 @@
 - **冲突语义**：有冲突时返回非零并保留 index stages 与工作树，不创建 `MERGE_HEAD`；非冲突型 merge 错误自动 `git reset --hard HEAD`，因为入口已证明 tracked、staged 和普通 untracked 状态均为空。
 - **Jujutsu**：允许 detached HEAD 和 colocated `.jj` 仓库，但只操作 Git index/工作树；输出提醒先完成、解决或取消本次应用，再继续普通 jj 操作。
 - **版本边界**：`v0.1.0` 只承诺首次 apply，不保存 provenance 状态，不把重复 apply 描述为模板升级协议。
+
+## 2026-08-06：模板 `ci.yml` 收敛
+
+- **Module interface**：shared workflow layout 只暴露 `project_cache`、`audit_cache`、`docs_cache` 三个可选 slot；触发器、权限、并发、job 拓扑、mise 安装和稳定任务调用全部隐藏在 module 实现中。
+- **触发器**：统一为 `pull_request(main)` 与手动触发；移除 Rust 独有的 `push(main)`，避免同一提交在 push 与后续 PR 路径重复跑完整 CI。release 与部署仍由各自 workflow 负责。
+- **任务调用**：项目检查统一调用 `mise run check`，审计调用 `mise -E ci run audit`，在线 action 策略调用 `mise -E ci run actions:versions:check`；不再在 workflow 复制 Go 的 `mod:verify`/`vuln:check` 或 Rust 的 `repo:check`/`rust:check`/`test` 组合。
+- **锁预检**：check job 直接执行 `mise -E ci install --dry-run --locked`，验证基础与 CI 环境锁文件完整性；这是 workflow 启动基础设施，不包装成项目任务。
+- **缓存 adapter**：Go 保留 build/module 与 pnpm store 缓存，Rust 保留 rust-cache；common 不绑定 cache slot。缓存是模板真实性能差异，不提升到 shared。
+- **Action 版本漂移**：公共 workflow 采用仓库现有模板中较新的已固定引用：checkout `v7.0.1`、mise-action `v4.2.3`，Go/Rust 缓存 action 保留各自现有固定版本。
+- **Rust job 合并**：Rust 的 repository、language check 和 test job 合并为稳定 `check` 接口。取舍是失去三块独立 job 状态，但换来 workflow 不理解项目内部任务拆分；mise 任务仍保留并行组合与本地可复现性。
+
+## 2026-08-06：Renovate 结构化配置
+
+- **Module interface**：Renovate module 的调用方只选择一个 JSON profile；module 固定读取 `shared/renovate/base.json`，拒绝 base/profile 对普通顶层键的重复归属，并把双方 `packageRules` 按 base 后 profile 的顺序追加。
+- **公共所有权**：schema、recommended presets、时区、dashboard、最小发布时间、lock maintenance，以及 GitHub Actions/npm/mise/major 更新规则归 base 所有。Go 原来仅有措辞差异的 npm 规则采用 common/Rust 的中性描述。
+- **模板 adapter**：profile 只拥有 `enabledManagers` 与真实语言规则；Go 保留 gomod tidy 和 Go toolchain 两类规则，Rust 保留 Cargo 分组，common 不增加语言规则。
+- **规则顺序**：公共规则始终先于语言规则，使 Go 的具体 toolchain 规则可以覆盖较通用的 mise 分组字段；Rust Cargo 规则移到公共规则之后，但匹配 manager 不重叠，不改变行为。
+- **根仓库 profile**：根 `renovate.json` 扫描根 mise/工具、`shared/**`、`config/**` 与 `overlays/**`，启用三模板 manager 并明确忽略 `templates/**` 生成快照。生成输出因此不会成为第二个依赖更新来源。
+- **序列化**：最终配置统一使用稳定的 UTF-8、两空格缩进和末尾换行；模板和根配置都由同一 module 生成并纳入 `sync:check`。
+
+## 2026-08-06：monorepo 根 CI
+
+- **所有权**：根 `.github/workflows/ci.yml` 是维护仓库自身基础设施，直接维护且不参与 shared/template render，避免生成器的 CI 依赖生成器输出形成循环。
+- **job 拓扑**：`source` job 验证根生成同步和 template-tool 本地 Git 集成测试；common、Go、Rust 分别使用独立 job、失败状态和缓存，不做第一版路径影响分析。
+- **模板环境**：每个模板 job 先用模板自己的锁文件执行 `mise -C templates/<name> install --locked`，并设置 ceiling、禁用全局配置、临时信任模板路径；随后调用根级 `mise run check <name>`。
+- **缓存**：Go job 缓存 build/module，Rust job 使用 rust-cache，common 只使用 mise-action 缓存。缓存 key 包含模板锁或语言校验文件，不跨模板共享语言缓存。
+- **根 Renovate**：monorepo profile 增加 `.github/**` 扫描路径，使根 workflow 的固定 action 引用由根配置维护；`templates/**` 仍被忽略。
+
+## 2026-08-06：根级 `actions:update`
+
+- **输入集合**：只发现根 `.github/workflows/**`、`shared/**` 和 `overlays/**` 中的 workflow/action YAML 与 Jinja fragment；绝不把 `templates/**` 生成快照交给 pinact。
+- **工具所有权**：根 mise 声明 `pinact = "4"`，统一使用三天最小发布时间并允许从 `MISE_GITHUB_TOKEN` 注入可隐藏的 API token；不依赖任一模板的工具环境。
+- **事务流程**：先把显式来源复制到临时目录，pinact 只能修改现有普通文件；成功后才回写来源、重新生成根配置和三份模板，并执行同步检查。
+- **失败语义**：pinact 创建/删除文件、输出 symlink、render 或同步检查失败时，恢复调用前全部来源并重新生成旧快照，不留下只更新一侧的状态。

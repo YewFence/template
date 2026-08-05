@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import stat
 import tempfile
@@ -208,6 +209,75 @@ class TemplateRepositoryTest(unittest.TestCase):
             repository.update_locks("example", False, adapter, fail_validation)
         self.assertEqual(source.read_text(), "before\n")
         self.assertEqual(target.read_text(), "before\n")
+
+    def test_renovate_module_generates_root_and_template_configs(self) -> None:
+        self.write_config()
+        (self.root / "shared/renovate").mkdir(parents=True)
+        (self.root / "config/renovate").mkdir(parents=True)
+        (self.root / "overlays/example/fragments/renovate").mkdir(parents=True)
+        (self.root / "shared/renovate/base.json").write_text(
+            json.dumps(
+                {
+                    "timezone": "Asia/Shanghai",
+                    "packageRules": [{"description": "base"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (self.root / "config/renovate/monorepo.json").write_text(
+            json.dumps(
+                {
+                    "enabledManagers": ["mise"],
+                    "ignorePaths": ["templates/**"],
+                    "packageRules": [{"description": "root"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (self.root / "overlays/example/fragments/renovate/profile.json").write_text(
+            json.dumps(
+                {
+                    "enabledManagers": ["npm"],
+                    "packageRules": [{"description": "template"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        repository = TemplateRepository(self.root)
+        repository.render_repository()
+        repository.render("example")
+
+        root_config = json.loads((self.root / "renovate.json").read_text())
+        template_config = json.loads(
+            (self.root / "templates/example/renovate.json").read_text()
+        )
+        self.assertEqual(root_config["ignorePaths"], ["templates/**"])
+        self.assertEqual(
+            [rule["description"] for rule in root_config["packageRules"]],
+            ["base", "root"],
+        )
+        self.assertEqual(template_config["enabledManagers"], ["npm"])
+        self.assertEqual(
+            [rule["description"] for rule in template_config["packageRules"]],
+            ["base", "template"],
+        )
+        self.assertTrue(repository.check_repository().matches)
+        self.assertTrue(repository.check("example").matches)
+
+    def test_renovate_module_rejects_duplicate_top_level_ownership(self) -> None:
+        self.write_config()
+        (self.root / "shared/renovate").mkdir(parents=True)
+        (self.root / "overlays/example/fragments/renovate").mkdir(parents=True)
+        (self.root / "shared/renovate/base.json").write_text(
+            '{"enabledManagers": ["mise"]}', encoding="utf-8"
+        )
+        (self.root / "overlays/example/fragments/renovate/profile.json").write_text(
+            '{"enabledManagers": ["npm"]}', encoding="utf-8"
+        )
+
+        with self.assertRaisesRegex(TemplateError, "duplicate top-level keys"):
+            TemplateRepository(self.root).render("example")
 
 
 if __name__ == "__main__":

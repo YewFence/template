@@ -1,0 +1,21 @@
+{
+  "enabledManagers": [
+    "cargo",
+    "github-actions",
+    "gomod",
+    "mise",
+    "npm",
+    "pep621"
+  ],
+  "includePaths": [
+    ".github/**",
+    "mise.toml",
+    "mise.lock",
+    "templates.toml",
+    "tools/**",
+    "shared/**",
+    "config/**",
+    "overlays/**"
+  ],
+  "ignorePaths": ["templates/**"]
+}

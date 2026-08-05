@@ -8,19 +8,10 @@
   "timezone": "Asia/Shanghai",
   "dependencyDashboard": true,
   "minimumReleaseAge": "3 days",
-  "enabledManagers": ["cargo", "github-actions", "npm", "mise"],
   "lockFileMaintenance": {
     "enabled": true
   },
   "packageRules": [
-    {
-      "description": "Group Cargo dependency updates.",
-      "matchManagers": ["cargo"],
-      "groupName": "Cargo dependencies",
-      "rangeStrategy": "bump",
-      "semanticCommitType": "chore",
-      "semanticCommitScope": "cargo-deps"
-    },
     {
       "description": "Group GitHub Actions updates.",
       "matchManagers": ["github-actions"],

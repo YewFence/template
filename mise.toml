@@ -2,8 +2,13 @@
 lockfile = true
 
 [tools]
+pinact = "4"
 python = "3.14.6"
 uv = "0.12.1"
+
+[env]
+PINACT_MIN_AGE = "3"
+PINACT_GITHUB_TOKEN = { value = "${MISE_GITHUB_TOKEN:-}", redact = true }
 
 [tasks.render]
 description = "Render one template or all templates"
@@ -49,3 +54,7 @@ arg "<template>" help="Template to update" {
 run = '''
 uv run --project tools/template-tool locks-update{% if usage.bump %} --bump{% endif %} "{{ usage.template }}" --root .
 '''
+
+[tasks."actions:update"]
+description = "Update pinned GitHub Actions in real sources and rerender snapshots"
+run = "uv run --project tools/template-tool actions-update --root ."
