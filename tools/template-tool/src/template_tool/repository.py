@@ -4,6 +4,7 @@ import difflib
 import json
 import os
 import posixpath
+import re
 import shutil
 import stat
 import subprocess
@@ -12,10 +13,18 @@ import tomllib
 import uuid
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from collections.abc import Callable
 from typing import Literal
 
 from jinja2 import Environment, StrictUndefined, nodes
+
+from .instantiation import (
+    InstantiationError,
+    InstantiationSpec,
+    SUPPORTED_METADATA_FIELDS,
+    build_token_values,
+    instantiate_tree,
+    validate_metadata,
+)
 
 
 Owner = Literal["shared", "overlay"]
@@ -32,7 +41,7 @@ class TemplateProfile:
     name: str
     path_rules: dict[PurePosixPath, PathRule]
     slots: dict[PurePosixPath, dict[str, tuple[str, ...]]]
-    lock_outputs: tuple[PurePosixPath, ...]
+    instantiation: InstantiationSpec
 
 
 @dataclass(frozen=True)
@@ -154,99 +163,14 @@ class TemplateRepository:
             self._remove_path(staged)
         return RenderResult(template, differences)
 
-    def update_locks(
-        self,
-        template: str,
-        bump: bool,
-        run_adapter: Callable[[Path, bool], None],
-        validate: Callable[[str], None] | None = None,
-    ) -> None:
-        profile = self._profile(template)
-        outputs = set(profile.lock_outputs)
-        if not outputs:
-            raise TemplateError(f"template {template!r} has no locks.outputs")
+    def validation_metadata(self, template: str) -> dict[str, str]:
+        return dict(self._profile(template).instantiation.validation_metadata)
 
-        staged = self._build_staged_tree(profile)
-        overlay_root = self.overlays_root / template
-        overlay_static = overlay_root / "static"
-        before = self._scan_tree(staged)
+    def instantiate(self, template: str, root: Path | str, metadata: dict[str, str]) -> None:
         try:
-            run_adapter(staged, bump)
-            after = self._scan_tree(staged)
-            changes = self._tree_difference(before, after)
-            changed_paths = {
-                PurePosixPath(line.split(": ", 1)[1])
-                for line in changes
-                if ": " in line
-            }
-            unexpected = changed_paths - outputs
-            if unexpected:
-                paths = ", ".join(str(path) for path in sorted(unexpected, key=str))
-                raise TemplateError(f"locks adapter changed undeclared paths: {paths}")
-            self._validate_lock_outputs(staged, profile.lock_outputs)
-
-            replacement = Path(
-                tempfile.mkdtemp(prefix=f".locks-{template}-", dir=overlay_root)
-            )
-            self._remove_path(replacement)
-            shutil.copytree(overlay_static, replacement, symlinks=True)
-            for output in profile.lock_outputs:
-                source = staged.joinpath(*output.parts)
-                destination = replacement.joinpath(*output.parts)
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                self._remove_path(destination)
-                shutil.copy2(source, destination, follow_symlinks=False)
-
-            overlay_backup = overlay_root / f".static.backup-{uuid.uuid4().hex}"
-            target = self.templates_root / template
-            target_backup = self.templates_root / f".{template}.backup-{uuid.uuid4().hex}"
-            target_existed = os.path.lexists(target)
-            overlay_backup_created = False
-            overlay_swapped = False
-            target_backup_created = False
-            try:
-                os.replace(overlay_static, overlay_backup)
-                overlay_backup_created = True
-                os.replace(replacement, overlay_static)
-                overlay_swapped = True
-                if target_existed:
-                    os.replace(target, target_backup)
-                    target_backup_created = True
-                self.render(template)
-                result = self.check(template)
-                if not result.matches:
-                    details = "\n".join(result.differences)
-                    raise TemplateError(f"rendered template is not in sync:\n{details}")
-                if validate is not None:
-                    validate(template)
-            except Exception:
-                if not target_existed or target_backup_created:
-                    self._remove_path(target)
-                if target_backup_created:
-                    os.replace(target_backup, target)
-                if overlay_swapped:
-                    self._remove_path(overlay_static)
-                if overlay_backup_created:
-                    os.replace(overlay_backup, overlay_static)
-                raise
-            else:
-                self._remove_path(target_backup)
-                self._remove_path(overlay_backup)
-        finally:
-            self._remove_path(staged)
-
-    @staticmethod
-    def _validate_lock_outputs(
-        staged: Path, outputs: tuple[PurePosixPath, ...]
-    ) -> None:
-        for output in outputs:
-            path = staged.joinpath(*output.parts)
-            if path.is_symlink() or not path.is_file():
-                raise TemplateError(
-                    f"locks output must be a regular file: {output}"
-                )
-            if path.stat(follow_symlinks=False).st_mode & stat.S_IXUSR:
-                raise TemplateError(f"locks output must not be executable: {output}")
+            instantiate_tree(Path(root), self._profile(template).instantiation, metadata)
+        except InstantiationError as error:
+            raise TemplateError(str(error)) from error
 
     def _profile(self, template: str) -> TemplateProfile:
         try:
@@ -313,26 +237,68 @@ class TemplateRepository:
                     bindings[slot_name] = tuple(raw_fragments)
                 slots[output_path] = bindings
 
-            raw_locks = raw_profile.get("locks", {})
-            if not isinstance(raw_locks, dict):
-                raise TemplateError(f"templates.{name}.locks must be a table")
-            raw_outputs = raw_locks.get("outputs", [])
-            if not isinstance(raw_outputs, list) or not all(
-                isinstance(output, str) for output in raw_outputs
-            ):
-                raise TemplateError(f"templates.{name}.locks.outputs must be an array of strings")
-            lock_outputs = tuple(
-                self._validate_output_path(output) for output in raw_outputs
-            )
-            if len(set(lock_outputs)) != len(lock_outputs):
-                raise TemplateError(f"templates.{name}.locks.outputs must not repeat paths")
+            raw_instantiation = raw_profile.get("instantiation")
+            if not isinstance(raw_instantiation, dict):
+                raise TemplateError(f"templates.{name}.instantiation must be a table")
+            required = raw_instantiation.get("required")
+            tokens = raw_instantiation.get("tokens")
+            derived = raw_instantiation.get("derived", {})
+            raw_validation = raw_instantiation.get("validation")
+            if not isinstance(required, list) or not all(isinstance(field, str) and field for field in required):
+                raise TemplateError(f"templates.{name}.instantiation.required must be an array of strings")
+            if len(set(required)) != len(required):
+                raise TemplateError(f"templates.{name}.instantiation.required must not repeat fields")
+            unsupported_fields = set(required) - SUPPORTED_METADATA_FIELDS
+            if unsupported_fields:
+                fields = ", ".join(sorted(unsupported_fields))
+                raise TemplateError(f"templates.{name}.instantiation requires unsupported metadata fields: {fields}")
+            if not isinstance(tokens, dict) or not all(isinstance(token, str) and isinstance(source, str) for token, source in tokens.items()):
+                raise TemplateError(f"templates.{name}.instantiation.tokens must be a string map")
+            invalid_tokens = [token for token in tokens if not re.fullmatch(r"[A-Z][A-Z0-9_]*", token)]
+            if invalid_tokens:
+                raise TemplateError(f"templates.{name}.instantiation.tokens contains invalid token names")
+            if not isinstance(derived, dict):
+                raise TemplateError(f"templates.{name}.instantiation.derived must be a table")
+            derived_values: dict[str, tuple[str, str]] = {}
+            for token, declaration in derived.items():
+                if not isinstance(token, str) or not isinstance(declaration, dict):
+                    raise TemplateError(f"invalid derived declaration for templates.{name}: {token}")
+                source = declaration.get("source")
+                transform = declaration.get("transform")
+                if not isinstance(source, str) or not isinstance(transform, str):
+                    raise TemplateError(f"derived {name}:{token} requires source and transform")
+                derived_values[token] = (source, transform)
+            if set(tokens) & set(derived_values):
+                raise TemplateError(f"templates.{name}.instantiation token names must be unique")
+            if any(not re.fullmatch(r"[A-Z][A-Z0-9_]*", token) for token in derived_values):
+                raise TemplateError(f"templates.{name}.instantiation.derived contains invalid token names")
+            if not isinstance(raw_validation, dict):
+                raise TemplateError(f"templates.{name}.instantiation.validation must be a table")
+            validation_metadata = raw_validation.get("metadata")
+            if not isinstance(validation_metadata, dict) or not all(isinstance(field, str) and isinstance(value, str) for field, value in validation_metadata.items()):
+                raise TemplateError(f"templates.{name}.instantiation.validation.metadata must be a string map")
+            unknown_instantiation = set(raw_instantiation) - {"required", "tokens", "derived", "validation"}
+            if unknown_instantiation:
+                keys = ", ".join(sorted(unknown_instantiation))
+                raise TemplateError(f"unknown keys in templates.{name}.instantiation: {keys}")
+            spec = InstantiationSpec(tuple(required), dict(tokens), derived_values, dict(validation_metadata))
+            referenced_fields = set(spec.tokens.values()) | {
+                source for source, _ in spec.derived.values()
+            }
+            if referenced_fields - set(spec.required):
+                raise TemplateError(f"templates.{name}.instantiation references undeclared metadata fields")
+            try:
+                validate_metadata(spec.validation_metadata, spec)
+                build_token_values(spec.validation_metadata, spec)
+            except InstantiationError as error:
+                raise TemplateError(f"invalid validation metadata for {name}: {error}") from error
 
-            unknown_keys = set(raw_profile) - {"paths", "slots", "locks"}
+            unknown_keys = set(raw_profile) - {"paths", "slots", "instantiation"}
             if unknown_keys:
                 keys = ", ".join(sorted(unknown_keys))
                 raise TemplateError(f"unknown keys in templates.{name}: {keys}")
 
-            profiles[name] = TemplateProfile(name, path_rules, slots, lock_outputs)
+            profiles[name] = TemplateProfile(name, path_rules, slots, spec)
 
         return profiles
 
@@ -358,6 +324,7 @@ class TemplateRepository:
                 prefix=f".render-{profile.name}-", dir=self.templates_root
             )
         )
+        staged.chmod(0o755)
         try:
             sources = self._select_sources(profile, overlay_root)
             self._validate_output_tree(sources)

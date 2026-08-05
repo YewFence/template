@@ -1,0 +1,81 @@
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: version
+    if: ${{ needs.version.outputs.should_release == 'true' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux-x86_64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            platform: linux-aarch64
+            packages: gcc-aarch64-linux-gnu
+            linker_env: CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            platform: macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform: macos-aarch64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows-x86_64
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+      MISE_ENV: "ci"
+      MISE_LOCKED: "1"
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+      RELEASE_PLATFORM: ${{ matrix.platform }}
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
+      RELEASE_TARGET: ${{ matrix.target }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.version.outputs.checkout_ref }}
+
+      - name: Setup mise
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          install_args: rust
+          add_shims_to_path: true
+          cache_key: "mise-release-${{ matrix.target }}-{{install_args_hash}}-{{file_hash}}"
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross compiler
+        if: ${{ matrix.packages }}
+        env:
+          PACKAGES: ${{ matrix.packages }}
+        run: |
+          read -r -a packages <<< "${PACKAGES}"
+          sudo apt-get update
+          sudo apt-get install -y "${packages[@]}"
+
+      - name: Configure linker
+        if: ${{ matrix.linker_env }}
+        env:
+          LINKER_ENV: ${{ matrix.linker_env }}
+        run: echo "${LINKER_ENV}" >> "${GITHUB_ENV}"
+
+      - name: Package release binary
+        run: mise run release:package
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.platform }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+

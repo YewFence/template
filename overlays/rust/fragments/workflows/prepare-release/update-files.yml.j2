@@ -1,0 +1,4 @@
+      - name: Update Cargo version
+        if: ${{ steps.release.outputs.should_prepare == 'true' }}
+        run: mise run release:version:update "${{ steps.release.outputs.version }}"
+

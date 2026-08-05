@@ -50,6 +50,7 @@ jobs:
       )
     outputs:
       tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
       checkout_ref: ${{ steps.release.outputs.checkout_ref }}
       should_release: ${{ steps.release.outputs.should_release }}
       create_tag: ${{ steps.release.outputs.create_tag }}
@@ -150,6 +151,7 @@ jobs:
 
           {
             echo "tag=${tag}"
+            echo "version=${tag#v}"
             echo "checkout_ref=${checkout_ref}"
             echo "should_release=${should_release}"
             echo "create_tag=${create_tag}"
@@ -207,6 +209,7 @@ jobs:
             echo "| Release Base SHA | \`${release_base_sha}\` |"
           } >> "${GITHUB_STEP_SUMMARY}"
 
+
   release:
     name: Publish GitHub Release
     needs: version
@@ -256,6 +259,7 @@ jobs:
 
           echo "path=${notes_file}" >> "${GITHUB_OUTPUT}"
 
+
       - name: Create release tag
         if: ${{ needs.version.outputs.create_tag == 'true' }}
         env:
@@ -282,6 +286,7 @@ jobs:
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           body_path: ${{ steps.notes.outputs.path }}
+
           prerelease: ${{ needs.version.outputs.prerelease }}
 
       - name: Summarize published release

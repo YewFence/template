@@ -141,22 +141,22 @@ run = "unset PINACT_MIN_AGE && pinact run --fix=false --no-api"
 [tasks.'docs:install']
 description = "Install documentation site dependencies"
 dir = "docs"
-run = "pnpm install"
+run = "pnpm install --frozen-lockfile"
 
 [tasks.'docs:dev']
 description = "Start the VitePress documentation site"
 depends = ["docs:install"]
 dir = "docs"
-run = "pnpm dev"
+run = "pnpm run dev"
 
 [tasks.'docs:build']
 description = "Build the VitePress documentation site"
 depends = ["docs:install"]
 dir = "docs"
-run = "pnpm build"
+run = "pnpm run build"
 
 [tasks.'docs:preview']
 description = "Preview the VitePress documentation site"
 depends = ["docs:install"]
 dir = "docs"
-run = "pnpm preview"
+run = "pnpm run preview"

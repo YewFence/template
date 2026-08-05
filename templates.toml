@@ -15,43 +15,103 @@ hints = [
 ]
 
 [templates.common]
- [templates.common.locks]
- outputs = [
-   "mise.lock",
-   "mise.ci.lock",
-   "docs/pnpm-lock.yaml",
- ]
+ [templates.common.instantiation]
+ required = ["project_name", "description", "github_owner", "repo_name"]
+ [templates.common.instantiation.tokens]
+ PROJECT_NAME = "project_name"
+ PROJECT_DESCRIPTION = "description"
+ GITHUB_OWNER = "github_owner"
+ REPO_NAME = "repo_name"
+ [templates.common.instantiation.derived.PROJECT_DESCRIPTION_JSON]
+ source = "description"
+ transform = "json-string"
+ [templates.common.instantiation.derived.PROJECT_NAME_JSON]
+ source = "project_name"
+ transform = "json-string"
+ [templates.common.instantiation.validation.metadata]
+ project_name = "Example Project"
+ description = "Example project description"
+ github_owner = "YewFence"
+ repo_name = "example-project"
  [templates.common.slots."mise.ci.toml"]
  audit_tasks = ["shared:mise/ci/common-audit.toml.j2"]
  release_package = ["shared:mise/ci/common-package.toml.j2"]
+ [templates.common.slots.".github/workflows/audit.yml"]
+ audit_paths = ["shared:workflows/audit/common-paths.yml.j2"]
+ [templates.common.slots.".github/workflows/prepare-release.yml"]
+ release_install_args = ["shared:workflows/prepare-release/install-args.j2"]
+ release_files = ["shared:workflows/prepare-release/files.j2"]
+ [templates.common.slots.".github/workflows/release.yml"]
+ release_needs = ["shared:workflows/release/version-only.j2"]
 
 [templates.go-cli]
- [templates.go-cli.locks]
- outputs = [
-   "mise.lock",
-   "mise.ci.lock",
-   "go.mod",
-   "go.sum",
-   "tools/apply-existing/go.mod",
-   "docs/pnpm-lock.yaml",
- ]
+ [templates.go-cli.instantiation]
+ required = ["project_name", "description", "github_owner", "repo_name", "go_module", "binary_name"]
+ [templates.go-cli.instantiation.tokens]
+ PROJECT_NAME = "project_name"
+ PROJECT_DESCRIPTION = "description"
+ GITHUB_OWNER = "github_owner"
+ REPO_NAME = "repo_name"
+ GO_MODULE = "go_module"
+ BINARY_NAME = "binary_name"
+ [templates.go-cli.instantiation.derived.PROJECT_DESCRIPTION_JSON]
+ source = "description"
+ transform = "json-string"
+ [templates.go-cli.instantiation.derived.PROJECT_NAME_JSON]
+ source = "project_name"
+ transform = "json-string"
+ [templates.go-cli.instantiation.validation.metadata]
+ project_name = "Example Go CLI"
+ description = "Example Go CLI description"
+ github_owner = "YewFence"
+ repo_name = "example-go-cli"
+ go_module = "github.com/YewFence/example-go-cli"
+ binary_name = "example-go-cli"
  [templates.go-cli.slots."mise.ci.toml"]
  maintenance_tools = ["overlay:mise/ci/maintenance.toml.j2"]
  audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
  release_package = ["overlay:mise/ci/package.toml.j2"]
  [templates.go-cli.slots.".github/workflows/ci.yml"]
  project_cache = ["overlay:workflows/ci/project-cache.yml.j2"]
- audit_cache = ["overlay:workflows/ci/audit-cache.yml.j2"]
- docs_cache = ["overlay:workflows/ci/docs-cache.yml.j2"]
+ [templates.go-cli.slots.".github/workflows/audit.yml"]
+ audit_cache = ["overlay:workflows/audit/cache.yml.j2"]
+ audit_paths = ["overlay:workflows/audit/paths.yml.j2"]
+ audit_install_args = ["overlay:workflows/audit/install-args.yml.j2"]
+ [templates.go-cli.slots.".github/workflows/prepare-release.yml"]
+ release_install_args = ["shared:workflows/prepare-release/install-args.j2"]
+ release_files = ["shared:workflows/prepare-release/files.j2"]
+ [templates.go-cli.slots.".github/workflows/release.yml"]
+ build_job = ["overlay:workflows/release/build-job.yml.j2"]
+ release_needs = ["shared:workflows/release/version-and-build.j2"]
+ release_artifact_download = ["overlay:workflows/release/download-artifacts.yml.j2"]
+ release_files = ["shared:workflows/release/files.yml.j2"]
 
 [templates.rust]
- [templates.rust.locks]
- outputs = [
-   "mise.lock",
-   "mise.ci.lock",
-   "Cargo.lock",
-   "docs/pnpm-lock.yaml",
- ]
+ [templates.rust.instantiation]
+ required = ["project_name", "description", "github_owner", "repo_name", "cargo_package", "binary_name"]
+ [templates.rust.instantiation.tokens]
+ PROJECT_NAME = "project_name"
+ PROJECT_DESCRIPTION = "description"
+ GITHUB_OWNER = "github_owner"
+ REPO_NAME = "repo_name"
+ CARGO_PACKAGE = "cargo_package"
+ BINARY_NAME = "binary_name"
+ [templates.rust.instantiation.derived.PROJECT_DESCRIPTION_JSON]
+ source = "description"
+ transform = "json-string"
+ [templates.rust.instantiation.derived.PROJECT_NAME_JSON]
+ source = "project_name"
+ transform = "json-string"
+ [templates.rust.instantiation.derived.RUST_CRATE_IDENT]
+ source = "cargo_package"
+ transform = "hyphen-to-underscore"
+ [templates.rust.instantiation.validation.metadata]
+ project_name = "Example Rust CLI"
+ description = "Example Rust CLI description"
+ github_owner = "YewFence"
+ repo_name = "example-rust-cli"
+ cargo_package = "example-rust-cli"
+ binary_name = "example-rust-cli"
  [templates.rust.slots."mise.ci.toml"]
  maintenance_tools = ["overlay:mise/ci/maintenance.toml.j2"]
  audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
@@ -59,4 +119,16 @@ hints = [
  release_package = ["overlay:mise/ci/package.toml.j2"]
  [templates.rust.slots.".github/workflows/ci.yml"]
  project_cache = ["overlay:workflows/ci/project-cache.yml.j2"]
- audit_cache = ["overlay:workflows/ci/audit-cache.yml.j2"]
+ [templates.rust.slots.".github/workflows/audit.yml"]
+ audit_cache = ["overlay:workflows/audit/cache.yml.j2"]
+ audit_paths = ["overlay:workflows/audit/paths.yml.j2"]
+ audit_install_args = ["overlay:workflows/audit/install-args.yml.j2"]
+ [templates.rust.slots.".github/workflows/prepare-release.yml"]
+ release_install_args = ["overlay:workflows/prepare-release/install-args.j2"]
+ release_files = ["overlay:workflows/prepare-release/files.j2"]
+ release_files_update = ["overlay:workflows/prepare-release/update-files.yml.j2"]
+ [templates.rust.slots.".github/workflows/release.yml"]
+ build_job = ["overlay:workflows/release/build-job.yml.j2"]
+ release_needs = ["shared:workflows/release/version-and-build.j2"]
+ release_artifact_download = ["overlay:workflows/release/download-artifacts.yml.j2"]
+ release_files = ["shared:workflows/release/files.yml.j2"]

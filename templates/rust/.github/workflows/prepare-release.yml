@@ -47,7 +47,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version="$(mise run release:version)"
-          tag="v${version}"
+          tag="$(mise run release:tag)"
           base_sha="$(git rev-parse HEAD)"
           notes_file="${RUNNER_TEMP}/release-notes.md"
           RELEASE_TAG="${tag}" RELEASE_NOTES_OUTPUT="${notes_file}" mise run release:notes
@@ -89,6 +89,7 @@ jobs:
         if: ${{ steps.release.outputs.should_prepare == 'true' }}
         run: mise run release:version:update "${{ steps.release.outputs.version }}"
 
+
       - name: Update changelog
         if: ${{ steps.release.outputs.should_prepare == 'true' }}
         env:
@@ -103,7 +104,8 @@ jobs:
         env:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
-          if [[ -z "$(git status --porcelain -- CHANGELOG.md Cargo.toml Cargo.lock)" ]]; then
+          release_files=("CHANGELOG.md" "Cargo.toml" "Cargo.lock")
+          if [[ -z "$(git status --porcelain -- "${release_files[@]}")" ]]; then
             echo "Release files are already up to date"
             {
               echo "| Release files changed | \`false\` |"
@@ -118,7 +120,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git switch -c "${RELEASE_BRANCH}"
-          git add CHANGELOG.md Cargo.toml Cargo.lock
+          git add -- "${release_files[@]}"
           git commit -m "chore: release ${RELEASE_TAG}"
           git push --force origin "HEAD:${RELEASE_BRANCH}"
           {

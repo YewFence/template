@@ -6,8 +6,8 @@ minimum_release_age = "3d"
 [tools]
 # https://nodejs.org/
 node = "26"
-# https://github.com/jdx/aube
-aube = "1"
+# https://pnpm.io/
+pnpm = "11"
 # https://github.com/jdx/hk
 hk = "1"
 # https://github.com/suzuki-shunsuke/nllint
@@ -39,7 +39,7 @@ run = 'echo "[PLACEHOLDER] Replace deps:fix with the project dependency fix, suc
 
 [tasks."deps:update"]
 description = "[PLACEHOLDER] Update project dependencies"
-run = 'echo "[PLACEHOLDER] Replace deps:update with the project dependency update command, such as cargo update or aube update"'
+run = 'echo "[PLACEHOLDER] Replace deps:update with the project dependency update command, such as cargo update or pnpm update"'
 
 [tasks.test]
 description = "[PLACEHOLDER] Run project tests"
@@ -126,22 +126,22 @@ run = "unset PINACT_MIN_AGE && pinact run --fix=false --no-api"
 [tasks.'docs:install']
 description = "Install documentation site dependencies"
 dir = "docs"
-run = "aube install --frozen-lockfile"
+run = "pnpm install --frozen-lockfile"
 
 [tasks.'docs:dev']
 description = "Start the VitePress documentation site"
 depends = ["docs:install"]
 dir = "docs"
-run = "aube run dev"
+run = "pnpm run dev"
 
 [tasks.'docs:build']
 description = "Build the VitePress documentation site"
 depends = ["docs:install"]
 dir = "docs"
-run = "aube run build"
+run = "pnpm run build"
 
 [tasks.'docs:preview']
 description = "Preview the VitePress documentation site"
 depends = ["docs:install"]
 dir = "docs"
-run = "aube run preview"
+run = "pnpm run preview"

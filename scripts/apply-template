@@ -4,7 +4,11 @@ set -euo pipefail
 
 readonly default_repository="https://github.com/YewFence/template.git"
 repository="${default_repository}"
-reference="main"
+reference=""
+
+usage() {
+  printf '%s\n' 'usage: apply-template --ref <ref> --template <name> [--repo <repository>] [target]'
+}
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -14,6 +18,10 @@ die() {
 arguments=("$@")
 for ((index = 0; index < ${#arguments[@]}; index++)); do
   case "${arguments[index]}" in
+    -h | --help)
+      usage
+      exit 0
+      ;;
     --repo)
       ((index + 1 < ${#arguments[@]})) || die '--repo requires a value'
       repository="${arguments[index + 1]}"
@@ -32,6 +40,8 @@ for ((index = 0; index < ${#arguments[@]}; index++)); do
       ;;
   esac
 done
+
+[[ -n "${reference}" ]] || die '--ref is required'
 
 command -v git >/dev/null 2>&1 || die 'git is required'
 command -v python3 >/dev/null 2>&1 ||

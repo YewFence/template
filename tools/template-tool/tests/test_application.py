@@ -7,8 +7,12 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from template_tool.application import ApplicationError, apply_template
-from template_tool.cli import apply_main
+from template_tool.application import (
+    ApplicationError,
+    apply_template,
+    initialize_project,
+)
+from template_tool.cli import apply_main, init_main
 
 
 class ApplyTemplateTest(unittest.TestCase):
@@ -35,6 +39,7 @@ class ApplyTemplateTest(unittest.TestCase):
     def _configure_identity(self, repository: Path) -> None:
         self._git(repository, "config", "user.name", "Template Test")
         self._git(repository, "config", "user.email", "template-test@localhost")
+        self._git(repository, "config", "commit.gpgSign", "false")
 
     def _init_source(self) -> None:
         subprocess.run(
@@ -52,13 +57,20 @@ class ApplyTemplateTest(unittest.TestCase):
             "[apply]\n"
             'protected = [".gitignore", "AGENTS.*", "LICENSE*"]\n'
             'hints = ["Review protected files manually."]\n'
-            "[templates.example]\n",
+            "[templates.example.instantiation]\n"
+            'required = ["project_name"]\n'
+            "[templates.example.instantiation.tokens]\n"
+            'PROJECT_NAME = "project_name"\n'
+            "[templates.example.instantiation.validation.metadata]\n"
+            'project_name = "Validation Project"\n',
             encoding="utf-8",
         )
         (self.source / "templates/example/.gitignore").write_text("template-cache/\n")
         (self.source / "templates/example/AGENTS.md").write_text("template agents\n")
         (self.source / "templates/example/LICENSE").write_text("template license\n")
-        (self.source / "templates/example/project.toml").write_text("enabled = true\n")
+        (self.source / "templates/example/project.toml").write_text(
+            'name = "{{PROJECT_NAME}}"\nenabled = true\n'
+        )
         self._git(self.source, "add", "--all")
         self._git(self.source, "commit", "--quiet", "-m", "template fixture")
 
@@ -98,7 +110,10 @@ class ApplyTemplateTest(unittest.TestCase):
         self.assertEqual((self.target / ".gitignore").read_text(), ".jj/\ntarget-cache/\n")
         self.assertEqual((self.target / "AGENTS.md").read_text(), "target agents\n")
         self.assertEqual((self.target / "LICENSE").read_text(), "target license\n")
-        self.assertEqual((self.target / "project.toml").read_text(), "enabled = true\n")
+        self.assertEqual(
+            (self.target / "project.toml").read_text(),
+            'name = "{{PROJECT_NAME}}"\nenabled = true\n',
+        )
         self.assertEqual(
             self._git(self.target, "diff", "--cached", "--name-only", capture=True),
             "project.toml",
@@ -175,6 +190,69 @@ class ApplyTemplateTest(unittest.TestCase):
         self.assertIn("git diff --check", stdout.getvalue())
         self.assertIn("git reset --hard HEAD", stdout.getvalue())
         self.assertFalse((self.target / ".git/MERGE_HEAD").exists())
+
+    def test_init_project_creates_initial_commit_and_stages_template(self) -> None:
+        workflow = self.source / "templates/example/.github/workflows/ci.yml"
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text("name: CI\n", encoding="utf-8")
+        self._git(self.source, "add", "templates/example/.github/workflows/ci.yml")
+        self._git(self.source, "commit", "--quiet", "-m", "add nested template path")
+        subprocess.run(
+            ["git", "init", "--quiet", "--initial-branch=main", str(self.target)],
+            check=True,
+        )
+        self._configure_identity(self.target)
+        stdout = StringIO()
+
+        with redirect_stdout(stdout):
+            init_main(
+                [
+                    str(self.target),
+                    "--repo",
+                    str(self.source),
+                    "--ref",
+                    "main",
+                    "--template",
+                    "example",
+                    "--project-name",
+                    "Initialized Project",
+                ]
+            )
+
+        output = stdout.getvalue()
+        self.assertIn("Initial-Commit:", output)
+        self.assertIn("Template-Commit:", output)
+        self.assertNotIn("Protected project identity", output)
+        self.assertEqual(
+            self._git(self.target, "rev-list", "--parents", "-n", "1", "HEAD", capture=True),
+            self._git(self.target, "rev-parse", "HEAD", capture=True),
+        )
+        self.assertEqual(
+            self._git(self.target, "diff", "--cached", "--name-only", capture=True),
+            ".github/workflows/ci.yml\n.gitignore\nAGENTS.md\nLICENSE\nproject.toml",
+        )
+        self.assertIn("Initialized Project", (self.target / "project.toml").read_text())
+        for protected in (".gitignore", "AGENTS.md", "LICENSE"):
+            self.assertTrue((self.target / protected).exists())
+        self.assertFalse((self.target / ".git/MERGE_HEAD").exists())
+
+    def test_init_project_rejects_history_dirty_unborn_and_nested_target(self) -> None:
+        self._init_target()
+        with self.assertRaisesRegex(ApplicationError, "use apply-template"):
+            initialize_project(str(self.source), "main", "example", self.target, {"project_name": "Example"})
+
+        dirty = self.root / "dirty"
+        subprocess.run(["git", "init", "--quiet", str(dirty)], check=True)
+        (dirty / "untracked.txt").write_text("dirty\n")
+        with self.assertRaisesRegex(ApplicationError, "not clean"):
+            initialize_project(str(self.source), "main", "example", dirty, {"project_name": "Example"})
+
+        unborn = self.root / "unborn"
+        nested = unborn / "nested"
+        nested.mkdir(parents=True)
+        subprocess.run(["git", "init", "--quiet", str(unborn)], check=True)
+        with self.assertRaisesRegex(ApplicationError, "repository root"):
+            initialize_project(str(self.source), "main", "example", nested, {"project_name": "Example"})
 
 
 if __name__ == "__main__":

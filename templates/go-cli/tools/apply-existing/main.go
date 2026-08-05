@@ -128,6 +128,7 @@ func planTemplateFiles() ([]templateFile, error) {
 		{path: "hk.pkl", overwrite: true},
 		{path: "cliff.toml", overwrite: true},
 		{path: ".github/workflows/ci.yml", overwrite: true},
+		{path: ".github/workflows/audit.yml", overwrite: true},
 		{path: ".github/workflows/docs.yml", overwrite: true},
 		{path: ".github/workflows/prepare-release.yml", overwrite: true},
 		{path: ".github/workflows/release.yml", overwrite: true},

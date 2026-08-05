@@ -50,6 +50,7 @@ jobs:
       )
     outputs:
       tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
       checkout_ref: ${{ steps.release.outputs.checkout_ref }}
       should_release: ${{ steps.release.outputs.should_release }}
       create_tag: ${{ steps.release.outputs.create_tag }}
@@ -150,6 +151,7 @@ jobs:
 
           {
             echo "tag=${tag}"
+            echo "version=${tag#v}"
             echo "checkout_ref=${checkout_ref}"
             echo "should_release=${should_release}"
             echo "create_tag=${create_tag}"
@@ -288,11 +290,10 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+
   release:
     name: Publish GitHub Release
-    needs:
-      - version
-      - build
+    needs: [version, build]
     if: ${{ needs.version.outputs.should_release == 'true' }}
     runs-on: ubuntu-latest
     permissions:
@@ -346,6 +347,7 @@ jobs:
           path: dist
           merge-multiple: true
 
+
       - name: Create release tag
         if: ${{ needs.version.outputs.create_tag == 'true' }}
         env:
@@ -373,6 +375,7 @@ jobs:
           tag_name: ${{ needs.version.outputs.tag }}
           body_path: ${{ steps.notes.outputs.path }}
           files: dist/*
+
           prerelease: ${{ needs.version.outputs.prerelease }}
 
       - name: Summarize published release

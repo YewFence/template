@@ -60,6 +60,7 @@ func TestIsTemplateOrigin(t *testing.T) {
 
 func TestResetGitHistoryCreatesFreshRepository(t *testing.T) {
 	requireGit(t)
+	clearTestGitRepositoryEnvironment(t)
 
 	directory := t.TempDir()
 	t.Chdir(directory)
@@ -92,6 +93,7 @@ func TestResetGitHistoryCreatesFreshRepository(t *testing.T) {
 
 func TestResetGitHistoryRejectsNestedRepository(t *testing.T) {
 	requireGit(t)
+	clearTestGitRepositoryEnvironment(t)
 
 	directory := t.TempDir()
 	t.Chdir(directory)
@@ -460,6 +462,27 @@ func requireGit(t *testing.T) {
 	}
 }
 
+func clearTestGitRepositoryEnvironment(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"} {
+		value, exists := os.LookupEnv(name)
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatalf("unset %s: %v", name, err)
+		}
+		t.Cleanup(func() {
+			if exists {
+				if err := os.Setenv(name, value); err != nil {
+					t.Errorf("restore %s: %v", name, err)
+				}
+				return
+			}
+			if err := os.Unsetenv(name); err != nil {
+				t.Errorf("clear %s: %v", name, err)
+			}
+		})
+	}
+}
+
 func runTestGit(t *testing.T, args ...string) string {
 	t.Helper()
 	output, err := runTestGitAllowError(args...)
@@ -470,6 +493,15 @@ func runTestGit(t *testing.T, args ...string) string {
 }
 
 func runTestGitAllowError(args ...string) (string, error) {
-	output, err := exec.Command("git", args...).CombinedOutput()
+	command := exec.Command("git", args...)
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		switch name {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE":
+			continue
+		}
+		command.Env = append(command.Env, entry)
+	}
+	output, err := command.CombinedOutput()
 	return string(output), err
 }

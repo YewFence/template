@@ -22,7 +22,14 @@ class TemplateRepositoryTest(unittest.TestCase):
 
     def write_config(self, body: str = "") -> None:
         (self.root / "templates.toml").write_text(
-            "version = 1\n[templates.example]\n" + body,
+            "version = 1\n[templates.example]\n"
+            + body
+            + "[templates.example.instantiation]\n"
+            'required = ["project_name"]\n'
+            "[templates.example.instantiation.tokens]\n"
+            'PROJECT_NAME = "project_name"\n'
+            "[templates.example.instantiation.validation.metadata]\n"
+            'project_name = "Example Project"\n',
             encoding="utf-8",
         )
 
@@ -37,6 +44,7 @@ class TemplateRepositoryTest(unittest.TestCase):
         repository.render("example")
 
         output = self.root / "templates/example"
+        self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o755)
         self.assertEqual((output / "LICENSE").read_bytes(), b"license\n")
         self.assertTrue((output / "run").stat().st_mode & stat.S_IXUSR)
         self.assertTrue(repository.check("example").matches)
@@ -124,91 +132,18 @@ class TemplateRepositoryTest(unittest.TestCase):
         with self.assertRaisesRegex(TemplateError, "escapes"):
             TemplateRepository(self.root).render("example")
 
-    def test_lock_update_rewrites_declared_outputs_and_rerenders(self) -> None:
-        self.write_config(
-            '[templates.example.locks]\n'
-            'outputs = ["state.lock"]\n'
+    def test_instantiation_profile_requires_valid_validation_metadata(self) -> None:
+        (self.root / "templates.toml").write_text(
+            "version = 1\n"
+            "[templates.example.instantiation]\n"
+            'required = ["project_name"]\n'
+            "[templates.example.instantiation.tokens]\n"
+            'PROJECT_NAME = "project_name"\n'
+            "[templates.example.instantiation.validation.metadata]\n",
+            encoding="utf-8",
         )
-        source = self.root / "overlays/example/static/state.lock"
-        source.write_text("before\n", encoding="utf-8")
-        repository = TemplateRepository(self.root)
-        repository.render("example")
-
-        calls: list[tuple[Path, bool]] = []
-
-        def adapter(staging: Path, bump: bool) -> None:
-            calls.append((staging, bump))
-            (staging / "state.lock").write_text("after\n", encoding="utf-8")
-
-        repository.update_locks("example", True, adapter)
-        self.assertEqual(calls[0][1], True)
-        self.assertEqual(source.read_text(), "after\n")
-        self.assertEqual(
-            (self.root / "templates/example/state.lock").read_text(), "after\n"
-        )
-        self.assertTrue(repository.check("example").matches)
-
-    def test_lock_update_rejects_undeclared_changes_without_touching_sources(self) -> None:
-        self.write_config(
-            '[templates.example.locks]\n'
-            'outputs = ["state.lock"]\n'
-        )
-        source = self.root / "overlays/example/static/state.lock"
-        source.write_text("before\n", encoding="utf-8")
-        repository = TemplateRepository(self.root)
-        repository.render("example")
-        target = self.root / "templates/example/state.lock"
-
-        def adapter(staging: Path, bump: bool) -> None:
-            (staging / "state.lock").write_text("after\n", encoding="utf-8")
-            (staging / "unexpected").write_text("forbidden\n", encoding="utf-8")
-
-        with self.assertRaisesRegex(TemplateError, "undeclared"):
-            repository.update_locks("example", False, adapter)
-        self.assertEqual(source.read_text(), "before\n")
-        self.assertEqual(target.read_text(), "before\n")
-
-    def test_lock_update_rejects_symlink_outputs_and_rolls_back_validation(self) -> None:
-        self.write_config(
-            '[templates.example.locks]\n'
-            'outputs = ["state.lock"]\n'
-        )
-        source = self.root / "overlays/example/static/state.lock"
-        source.write_text("before\n", encoding="utf-8")
-        repository = TemplateRepository(self.root)
-        repository.render("example")
-        target = self.root / "templates/example/state.lock"
-
-        def adapter(staging: Path, bump: bool) -> None:
-            (staging / "state.lock").unlink()
-            os.symlink("missing", staging / "state.lock")
-
-        with self.assertRaisesRegex(TemplateError, "regular file"):
-            repository.update_locks("example", False, adapter)
-        self.assertEqual(source.read_text(), "before\n")
-        self.assertEqual(target.read_text(), "before\n")
-
-    def test_lock_update_rolls_back_after_final_validation_failure(self) -> None:
-        self.write_config(
-            '[templates.example.locks]\n'
-            'outputs = ["state.lock"]\n'
-        )
-        source = self.root / "overlays/example/static/state.lock"
-        source.write_text("before\n", encoding="utf-8")
-        repository = TemplateRepository(self.root)
-        repository.render("example")
-        target = self.root / "templates/example/state.lock"
-
-        def adapter(staging: Path, bump: bool) -> None:
-            (staging / "state.lock").write_text("after\n", encoding="utf-8")
-
-        def fail_validation(template: str) -> None:
-            raise TemplateError("fixture validation failure")
-
-        with self.assertRaisesRegex(TemplateError, "fixture validation"):
-            repository.update_locks("example", False, adapter, fail_validation)
-        self.assertEqual(source.read_text(), "before\n")
-        self.assertEqual(target.read_text(), "before\n")
+        with self.assertRaisesRegex(TemplateError, "missing required metadata"):
+            TemplateRepository(self.root)
 
     def test_renovate_module_generates_root_and_template_configs(self) -> None:
         self.write_config()

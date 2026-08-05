@@ -12,7 +12,7 @@ The template intentionally does not detect, select, or switch programming langua
 | Git hooks | [hk](https://hk.jdx.dev/) runs `mise run check` before commits and suggests `mise run fix` when checks fail |
 | Repository checks | [nllint](https://github.com/suzuki-shunsuke/nllint), [typos](https://github.com/crate-ci/typos), and [betterleaks](https://github.com/betterleaks/betterleaks) provide language-neutral checks |
 | GitHub Actions checks | [actionlint](https://github.com/rhysd/actionlint) validates workflows and [pinact](https://github.com/suzuki-shunsuke/pinact) pins actions to immutable commit hashes |
-| Documentation | A [VitePress](https://vitepress.dev/) site is managed with [aube](https://github.com/jdx/aube) and deployed through GitHub Pages |
+| Documentation | A [VitePress](https://vitepress.dev/) site is managed with [pnpm](https://pnpm.io/) and deployed through GitHub Pages |
 | Dependency updates | [Renovate](https://docs.renovatebot.com/) updates GitHub Actions, documentation dependencies, and mise tools |
 | Releases | [git-cliff](https://git-cliff.org/) prepares changelogs and release pull requests; GitHub Actions publishes tags and GitHub Releases |
 

@@ -9,6 +9,8 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from .repository import TemplateError, TemplateRepository
+
 
 class ApplicationError(RuntimeError):
     """Raised when a template cannot be safely applied."""
@@ -33,6 +35,50 @@ class ApplyResult:
     hints: tuple[str, ...]
     conflicted: bool
     jujutsu: bool
+    instantiated: bool
+
+
+@dataclass(frozen=True)
+class InitProjectResult:
+    initial_commit: str
+    application: ApplyResult
+
+
+def initialize_project(
+    repository: str,
+    reference: str,
+    template: str,
+    target: Path | str,
+    metadata: dict[str, str],
+) -> InitProjectResult:
+    target_root = _unborn_target_root(Path(target))
+    _require_clean_repository(target_root)
+    _require_idle_repository(target_root)
+    try:
+        _run(
+            [
+                "git",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "chore: initialize repository",
+            ],
+            cwd=target_root,
+        )
+    except subprocess.CalledProcessError as error:
+        raise ApplicationError(
+            "cannot create the initial commit; review the Git author identity, signing, and hooks"
+        ) from error
+    initial_commit = _output(["git", "rev-parse", "HEAD^{commit}"], cwd=target_root)
+    try:
+        application = _apply_template(
+            repository, reference, template, target_root, metadata=metadata, protect=False
+        )
+    except (ApplicationError, subprocess.CalledProcessError) as error:
+        raise ApplicationError(
+            f"created initial commit {initial_commit}, but template application failed: {error}"
+        ) from error
+    return InitProjectResult(initial_commit, application)
 
 
 def apply_template(
@@ -40,6 +86,18 @@ def apply_template(
     reference: str,
     template: str,
     target: Path | str,
+) -> ApplyResult:
+    return _apply_template(repository, reference, template, target, metadata=None, protect=True)
+
+
+def _apply_template(
+    repository: str,
+    reference: str,
+    template: str,
+    target: Path | str,
+    *,
+    metadata: dict[str, str] | None,
+    protect: bool,
 ) -> ApplyResult:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", template):
         raise ApplicationError(f"invalid template name: {template!r}")
@@ -88,7 +146,12 @@ def apply_template(
             )
 
         temporary_commit, skipped = _filtered_template_commit(
-            source, commit, template, policy.protected, Path(temporary)
+            source,
+            commit,
+            template,
+            policy.protected if protect else (),
+            Path(temporary),
+            metadata,
         )
         _run(
             ["git", "fetch", "--quiet", "--no-tags", str(source), temporary_commit],
@@ -130,9 +193,10 @@ def apply_template(
             reference=reference,
             commit=commit,
             skipped=skipped,
-            hints=policy.hints,
+            hints=policy.hints if protect else (),
             conflicted=conflicted,
             jujutsu=(target_root / ".jj").exists(),
+            instantiated=metadata is not None,
         )
 
 
@@ -147,6 +211,30 @@ def _target_root(target: Path) -> Path:
             f"target must be an existing Git repository with at least one commit: {target}"
         ) from error
     return Path(root).resolve()
+
+
+def _unborn_target_root(target: Path) -> Path:
+    if not target.is_dir():
+        raise ApplicationError(f"target directory does not exist: {target}")
+    try:
+        root = Path(_output(["git", "rev-parse", "--show-toplevel"], cwd=target)).resolve()
+    except subprocess.CalledProcessError as error:
+        raise ApplicationError(
+            f"target must be an initialized Git repository: {target}"
+        ) from error
+    if target.resolve() != root:
+        raise ApplicationError(f"target must be the Git repository root: {root}")
+    completed = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode == 0:
+        raise ApplicationError(
+            f"target already has a commit; use apply-template instead: {root}"
+        )
+    return root
 
 
 def _require_clean_repository(target: Path) -> None:
@@ -213,6 +301,7 @@ def _filtered_template_commit(
     template: str,
     protected: tuple[str, ...],
     temporary: Path,
+    metadata: dict[str, str] | None = None,
 ) -> tuple[str, tuple[str, ...]]:
     treeish = f"{commit}:templates/{template}"
     try:
@@ -235,7 +324,22 @@ def _filtered_template_commit(
 
     index = temporary / "template.index"
     environment = os.environ | {"GIT_INDEX_FILE": str(index)}
-    _run(["git", "read-tree", treeish], cwd=source, env=environment)
+    if metadata is not None:
+        try:
+            TemplateRepository(source).instantiate(
+                template, source / "templates" / template, metadata
+            )
+        except TemplateError as error:
+            raise ApplicationError(f"cannot instantiate {template!r}: {error}") from error
+        environment["GIT_WORK_TREE"] = str(source / "templates" / template)
+        _run(["git", "read-tree", "--empty"], cwd=source, env=environment)
+        _run(
+            ["git", "add", "--sparse", "--all"],
+            cwd=source / "templates" / template,
+            env=environment,
+        )
+    else:
+        _run(["git", "read-tree", treeish], cwd=source, env=environment)
     if skipped:
         _run(
             ["git", "update-index", "--force-remove", "--", *skipped],

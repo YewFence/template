@@ -1,23 +1,15 @@
-# Monorepo 配置收敛讨论
+# Monorepo 配置收敛记录
 
 ## 状态
 
-本文档用于同步记录 monorepo 中 mise 配置与模板 workflow 的收敛决策。
-当前仍处于讨论阶段；只有标记为“已确认”的内容可以作为后续实现合同。
+本文档记录 monorepo 中 mise、模板交付物和模板 workflow 的收敛合同。
+其中“模板依赖状态”章节已在 2026-08-06 设计转向后取代旧的锁文件回写方案；旧方案只保留在 Git 历史中，不再作为实现依据。
 
 ## 当前范围
 
-本轮收敛三个模板的 `mise.ci.toml`，并同步实现它所依赖的 `locks:update [--bump] <template>` 基础设施、overlay monorepo-only 锁文件 adapter、原生锁文件更新和最终模板验证，形成可以在本地完整运行的稳定任务接口与可复现工具环境。
+实施范围已经覆盖三个模板的 `mise.ci.toml`、结构化 Renovate、`ci.yml`、`audit.yml`、`docs.yml`、`prepare-release.yml`、`release.yml` 和 monorepo 根 CI；模板依赖状态的临时验证合同已确认，旧的事务式 `locks:update` 不再是目标接口。
 
-以下内容暂不纳入本轮实现：
-
-- monorepo 根目录的 GitHub Actions workflow；等仓库主体完成后再添加。
-- 三个模板的 `ci.yml` layout 与 fragment；先保留现有差异，待 mise 任务接口稳定后逐项讨论。
-- release workflow 和 Renovate。
-
-`ci.yml` layout、workflow 触发器、job 拓扑、缓存和审计 job 的收敛仍不属于本轮；现有 workflow 保持原样，等 mise 接口与锁文件流程稳定后再讨论。
-
-未来的 GitHub Actions CI 只负责在 pull request 更新时再次调用已经通过本地验证的根级 mise 检查任务，不拥有额外的项目检查逻辑。mise 环境选择、工具安装和锁文件完整性属于 workflow 启动基础设施，可以直接调用 mise CLI，不包装成项目任务。
+workflow 只拥有触发器、权限、并发、缓存、平台矩阵与 mise 启动基础设施；项目检查、审计、版本和打包行为通过稳定 mise 任务调用。shared layout 只暴露已经证明存在真实差异的语义 slot，大型 Go/Rust 发布矩阵保持完整 adapter。
 
 ## 设计依据
 
@@ -26,7 +18,7 @@
 - `mise.ci.toml` 不属于 GitHub Actions 私有实现；维护者必须能够通过 `mise -E ci run <task>` 在本地运行和诊断其中的行为。
 - workflow 应调用稳定的 mise 任务，不理解语言工具、命令组合或项目内部实现；环境选择、工具安装和锁文件完整性检查是允许直接调用 mise CLI 的基础设施特例。
 - shared 来源只拥有模板无关的行为；Go、Rust 和 common 的真实差异通过 overlay adapter 提供。
-- slot 按行为语义划分，不为单行工具配置或单个 workflow step 建立细碎插入点。
+- slot 按行为语义划分，不按文本位置或 step 序号建立细碎插入点。只有两个以上模板确实存在不同工具集合、依赖合同或完整实现时才建立 seam；真实差异可以由标量 slot 或完整 job adapter 表达。
 
 ## 已确认决策
 
@@ -136,161 +128,123 @@ common 的 `audit` 和 `release:package` 当前是显式 `[PLACEHOLDER]`，输�
 
 已确认首次收敛继续保持以下语义：
 
-- common placeholder 输出包含 `[PLACEHOLDER]` 的明确提示并成功退出，使语言无关模板生成后可以直接通过基线检查。
+- common placeholder 输出包含 `[PLACEHOLDER]` 的明确提示并成功退出；完整模板仍需先由 staging 验证流程生成通用依赖状态与 Action digest，不能把 placeholder 自身成功误写为未引导模板直接绿色。
 - placeholder 不输出伪造的审计结果、版本或资产路径，只说明需要替换或在不需要该能力时删除。
 - Go 的 `audit` 按 `mod:verify`、`vuln:check` 的顺序串行执行并 fail fast，保持当前 workflow 的执行顺序。
 - Rust 的 `audit` 直接传播 `cargo audit` 的退出状态和输出。
 - Go 和 Rust 的 `release:package` 直接传播打包脚本的退出状态和输出。
 - shared layout 不为 adapter 增加统一的错误吞并、fallback 或输出包装。
 
-### 锁文件的生成阶段与所有权
+### 模板依赖状态与临时验证
 
-收敛后的三个 `mise.ci.toml` 都包含 shared 提供的 `git-cliff`，同时具有不同的维护工具集合：
+模板交付物不保存预生成依赖状态。`shared/`、`overlays/<name>/static/` 和 `templates/<name>/` 不提交模板的 `mise.lock`、`mise.ci.lock`、`Cargo.lock`、`go.sum`、`docs/pnpm-lock.yaml` 等原生命令输出；模板 workflow 不保存 Action commit digest，只声明 `actions/*@vN` 等兼容版本线。根 `mise.lock`、`tools/template-tool/uv.lock` 和根 workflow digest 属于 monorepo 维护环境，继续精确锁定。
 
-- common：只有公共维护工具。
-- Go：公共维护工具和 `govulncheck`。
-- Rust：公共维护工具、`cargo-audit` 和 `cargo-edit`。
+模板声明生态认可的兼容版本线：稳定生态通常声明 major，pre-1.0 工具可保留 minor 兼容线，Go Modules 等不支持范围的生态继续使用具体合法版本。Rust `rust-version`、Go language directive 和项目自身版本表达兼容性或项目身份，不属于依赖锁定。
 
-因此三个模板的完整原生锁文件必然不同，但不能在 mise 配置尚未完成时直接把锁文件当作独立静态来源设计。
+刚 render 或 apply 的结果是未引导模板，不保证直接通过 `mise run check`。用户需要在应用后依次生成 mise 锁、规范化语言依赖、生成文档锁并通过 pinact 固定 Action digest；完成后才成为应当通过检查的已引导项目。模板不增加 `mise run bootstrap` 聚合任务，文档直接列出真实命令。
 
-实现已经补齐 renderer 之外的显式原生生成阶段：根级 `locks:update [--bump] <template>` 在 staging 模板中调用 overlay adapter，只允许声明输出变化，固定回写对应 overlay，并在切换后重新 render、同步检查和执行模板完整检查。普通 `render` 与 `sync:check` 仍保持离线、确定性，不隐式运行原生命令。
+已引导项目必须把生成状态提交到自己的 Git 仓库，包括 `mise.lock`、`mise.ci.lock`、语言锁定或校验状态、`docs/pnpm-lock.yaml` 和 pinact 修改；这些路径不得被忽略。模板继续使用 locked、frozen 和 pinned 检查，取消的只是模板维护者提前替未来用户解析依赖。
 
-已确认采用显式的两阶段锁文件流程：
+新项目引导与 staging validation adapter 运行 `deps:update`，解析执行当天兼容版本线内的当前版本；`deps:fix` 继续只做规范化。Go 使用更新加 tidy 处理必须具体声明的 module 版本，Rust 在没有 lockfile 时建立当前兼容解析。已有项目应用流程不自动升级依赖。
 
-1. renderer 先在临时目录生成完整模板，使 shared layout 和 overlay adapter 已经组合成最终 `mise.toml` 与 `mise.ci.toml`。
-2. `locks:update [--bump] <template>` 在该完整模板中运行 mise 原生命令，生成或更新完整的 `mise.lock` 与 `mise.ci.lock`。
-3. 更新任务把原生生成的完整文件回写到对应的 `overlays/<name>/static/<path>`，不拆分或合并锁文件条目。
-4. 更新任务重新 render 正式模板，再运行 `sync:check` 和模板检查。
-5. 普通 `render` 和 `sync:check` 保持确定性、离线和无网络，不隐式运行 `mise lock`。
+文档站点继续使用 pnpm 和 `docs/pnpm-lock.yaml`。aube 原生 `aube-lock.yaml` 尚不受 Renovate npm manager 的 lockfile maintenance 支持，因此本方案按 CLI 回退规则保留 pnpm，不同时生成两种锁文件。
 
-在这个模型中，锁文件是基于完整模板配置生成的派生快照，同时作为后续普通 render 的受管来源保存。第一版中，`locks.outputs` 声明的全部路径固定归对应模板的 `overlays/<name>/static/` 所有，不支持写入 shared，也不依赖“当前路径所有者”推断归属。未来若要把持续完全一致的生成文件提升到 shared，必须另行确认并实现所有权迁移流程。
+validation adapter 生成文档 lockfile 后不运行 `docs:build`，只执行模板内置 `mise run check`。文档站点实际构建目前不属于模板基础验证合同。
 
-### 锁文件生成任务配置
+文档任务分为 `docs:install`（非 frozen 的首次解析与安装）、`docs:lock`（只写 `pnpm-lock.yaml`）和 `docs:install:locked`（只消费已提交锁）。`docs:build`、`docs:dev` 与 `docs:preview` 统一依赖 `docs:install:locked`，防止消费任务修改依赖状态。
 
-不同语言的锁文件生成命令由 overlay 根部的 monorepo-only mise adapter 拥有，`templates.toml` 不直接保存原始 shell 命令。
+`init-project` 先由外部工具完成项目实例化；新项目随后按 trust、生成 mise 锁、locked 安装基础工具、`deps:update`、`docs:install`、Action pinning、hooks 安装和最终 `check` 的顺序完成依赖引导。validation adapter 用 `docs:lock` 代替文档安装并丢弃 staging。生成项目不再提供 Go 专属项目身份 `init`。
 
-语言工具版本仍由最终模板配置拥有：Go adapter 使用 `mise -C <template-root> exec -- go ...`，Rust adapter 使用 `mise -C <template-root> exec -- cargo ...`，从 staging 模板最终生成的 `mise.toml` 解析工具版本。overlay 根部不重复声明 Go 或 Rust。aube 是 monorepo 维护例外，三个 `overlays/<name>/mise.toml` 都声明 `aube = "1"`，用于统一维护 `docs/pnpm-lock.yaml`。
+项目实例化是把通用模板蓝图一次性物化为具体项目树的外部工具能力，覆盖项目名称、描述、GitHub owner、仓库名及语言专属 module、crate 或 binary 身份。`init-project` 面向干净的新仓库，自动实例化临时模板树后再 staged apply；`apply-template` 面向已有项目，只做纯 staged apply，不自动重写项目身份、remote 或 Git 历史。最终模板不再携带需要运行后删除的 Go `mise run init` 或 `tools/init-template`。
 
-每个正式模板在 `templates.toml` 中只登记允许输出路径，例如：
+`init-project` 使用显式 CLI options 作为稳定、可脚本化的 metadata 接口。交互式终端允许提示补齐缺失的必填项；非交互环境缺项直接失败。提示文本和顺序不构成兼容 API，工具不读取 Git remote 来猜测项目身份。字段集合由 D60 固定，staging validation fixture 由 D65 固定。
 
-```toml
-[templates.go-cli.locks]
-outputs = [
-  "mise.lock",
-  "mise.ci.lock",
-  "go.mod",
-  "go.sum",
-  "tools/apply-existing/go.mod",
-  "docs/pnpm-lock.yaml",
-]
-```
+metadata schema 分成共享项目身份与 profile 专属语言身份。共享必填字段为 `--project-name`、`--description`、`--github-owner` 和 `--repo-name`；Go CLI 额外要求 `--go-module`、`--binary-name`，Rust 额外要求 `--cargo-package`、`--binary-name`，common 没有额外字段。`project-name` 是显示名称，不复用为语言标识符；CLI 根据所选模板只暴露和校验相关字段。
 
-三个 overlay 根部的 monorepo-only adapter 统一暴露 `mise run locks:update [--bump] <template-root>`，在任务内部调用各自的原生命令。根工具为当前模板加载对应 overlay adapter，在临时完整模板中运行该任务，并验证任务没有修改 `outputs` 之外的路径；最终生成模板不包含该维护任务。
+模板蓝图只保留一个带 metadata 占位符的 `README.md`，不再维护 `README.md` 模板指南与 `README.template.md` 项目内容双文件。`init-project` 在临时树中原地实例化 README；`apply-template` 不自动实例化或特殊消费它，只按普通模板文件执行 staged apply 并交给用户审查。统一模板使用说明归根 README，overlay README 只保留模板特有内容。
 
-这种结构保持以下所有权：
+根 `README.md` 是统一的外部使用入口，负责应用器命令、metadata 参数和依赖引导；`overlays/<name>/static/README.md` 只保留各模板的功能介绍、结构说明和语言特有行为，不重复应用器流程。
 
-- `templates.toml` 拥有允许变化的输出集合；固定的 `locks:update` 任务名属于 adapter interface。
-- overlay 根部的 monorepo-only mise adapter 拥有 Go、Cargo、aube 和 mise 等具体命令及执行顺序。
-- 原生包管理器拥有锁文件内容。
-- 根工具拥有临时执行、变化验证、来源回写和最终 render 流程。
+Go 蓝图删除 `tools/init-template`、`tools/apply-existing` 和 `[tasks.init]`，不保留兼容入口。项目实例化与已有项目应用分别由正式外部 `init-project`、`apply-template` 承担，validation adapter 也不再维护嵌套 `tools/apply-existing` module 的依赖状态。
 
-`outputs` 的来源所有权和存储位置已经确认：所有声明路径均回写到当前模板的 `overlays/<name>/static/`。
+`init-project` 使用 clean-target apply policy：目标已是干净、unborn 且无 untracked 内容的新仓库，因此完整应用实例化后的 `README.md`、`AGENTS.md`、`.gitignore`、许可证、notice 和其他模板文件；已有项目 denylist 只属于 `apply-template`。两个入口共享 sparse fetch、临时 commit 和 squash apply 内核，但 protected policy 按目标生命周期分开。
 
-### 锁文件是否纳入版本管理
+`apply-template` 不接受 metadata，也不实例化内容或路径。已有项目的 staged tree 可以保留合法 uppercase blueprint token，包括 tokenized 路径；应用不会因此失败。成功输出必须给出未实例化 HINT 和 Git/token 搜索审查命令，但不启动交互式替换。
 
-不建议忽略锁文件或只在检查中临时生成。当前模板行为依赖受版本管理的锁文件：
+项目实例化使用严格 token engine，而不是对生成树再次运行 Jinja2。工具替换显式声明的 `{{UPPER_SNAKE_CASE}}` token，处理可识别的 UTF-8 文本和相对路径组件；未知 uppercase token 在替换后残留即失败。路径替换先生成完整计划，路径值必须是安全单组件，拒绝 `/`、`\\`、空值、`.`、`..` 与控制字符，且拒绝越界、碰撞和文件/目录类型冲突。GitHub Actions 表达式和其他双大括号内容不参与，语言差异通过 profile token map 与声明式派生值表达，不允许模板注入 imperative hook。
 
-- 自动化检查设置 `MISE_LOCKED=1`，需要完整的 `mise.lock` 与 `mise.ci.lock`。
-- Rust 的构建、检查和测试使用 Cargo `--locked`。
-- 文档依赖安装使用 frozen lockfile 语义。
-- Go 的 `go.sum` 提供模块内容校验，`go mod tidy -diff` 以已提交状态为基线。
-- 模板目标要求生成项目完整、自包含且依赖解析可复现。
+`templates.toml` 扩展为 render、apply 和 instantiate 共用的模板 profile 合同。每个 `[templates.<name>]` profile 从当前应用器静态支持的 metadata 字段中选择必填集合，并声明 token map、有限派生值以及专属 validation fixture；fixture 只用于 staging，不是 CLI 默认值。Python 工具不按 common、go-cli 或 rust 名称分支执行不同实例化流程，但当前版本静态定义自己支持的字段和 transform 词汇。
 
-如果不提交锁文件，就必须移除或削弱上述合同；新项目首次运行还会立即产生一批未提交文件，模板快照也无法表达实际使用的依赖解析结果。
+实例化 schema 保持最小：`required` 字段列表、平面 `tokens` 映射、有限 `derived` 声明和 `validation.metadata` 值。第一版不把 prompt、help、默认值、regex 或命令插值写进 profile；CLI help 与交互提示由当前应用器版本的静态 argparse 定义提供。
 
-将原生生成文件回写到 `overlays/<name>/static` 并不违反 static 的语义：static 只表示 renderer 按字节复制、不解释内容；这些文件仍然是由原生命令生成的受管 render 输入。第一版不把任何 `locks.outputs` 路径写入 shared。
+`init-project` 一次解析当前版本静态支持的全部命名 options，不根据远端配置动态生成 argparse。profile 只负责选择必填字段与 token 映射；无关 option、未知字段、未知 token source 或未知 transform 直接失败。应用器与不同版本模板 schema 不提供兼容保证，裸 `--help` 不联网并展示当前版本的完整参数集合。
 
-已确认把 monorepo 专属的锁文件命令组放在 overlay 根部，而不是放进最终模板：
+`apply-template` 与 `init-project` 都要求显式 `--ref`，不默认使用 `main`。uvx 使用时，文档要求包来源 `@<ref>` 与模板 `--ref <ref>` 一致；clone 本地运行使用 `--repo <path> --ref HEAD`。工具不验证版本相等，也不适配错配 schema。
 
-```text
-overlays/common/mise.toml
-overlays/go-cli/mise.toml
-overlays/rust/mise.toml
-```
+第一版 derived 白名单只有 `hyphen-to-underscore` 和 `json-string`。前者用于 Cargo package 到 Rust crate identifier 的转换；后者产生可直接放入 TypeScript/YAML 字符串位置的带引号转义值。raw 与编码上下文使用不同 token，不允许 transform 链、任意表达式或模板自定义编码器。
 
-这些文件不是 `overlays/<name>/static/mise.toml`，renderer 不会把它们输出到模板。它们只为 monorepo 根工具提供语言 adapter，例如统一任务名：
+Token 语义不再混用：`PROJECT_NAME` 是显示名称，`PROJECT_DESCRIPTION`/`PROJECT_DESCRIPTION_JSON` 分别是 raw/JSON 描述，`GITHUB_OWNER` 与 `REPO_NAME` 是 GitHub 身份，`GO_MODULE` 是 Go module path，`CARGO_PACKAGE` 是 Cargo package 名，`RUST_CRATE_IDENT` 是源码 identifier，`BINARY_NAME` 是可执行文件、命令路径和 release packaging 名。Go 的 `cmd/your-cli`、completion 与命令文档属于 `BINARY_NAME` 迁移范围。
 
-```text
-mise run locks:update [--bump] <template-root>
-```
+来源清理不依赖运行时兼容分支：身份相关的 `your-cli`、`rust-template`、`rust_template`、`github.com/example/your-cli` 等 legacy sentinel 必须在 manifest、源码、测试、mise task、脚本、docs package 和路径中显式迁成 token；残留字面量由外层 overlay validation adapter 暴露，而不是由实例化器猜测替换或进入用户项目检查。
 
-根工具以 `overlays/<name>` 为工作目录启动 adapter，并设置：
+各 `overlays/<name>/mise.toml` 在依赖生成和最终项目检查前扫描实例化 staging，拒绝该模板自己的 legacy identity sentinel。历史名称列表不进入 shared、生成模板或 `template-tool`，命中即 fail fast。
 
-```text
-MISE_CEILING_PATHS=<monorepo-root>
-MISE_GLOBAL_CONFIG_FILE=/dev/null
-MISE_TRUSTED_CONFIG_PATHS=<overlay-root>:<staging-template-root>
-```
+metadata 与 validation fixture 统一要求非空单行字符串，拒绝 NUL、ASCII 控制字符和前导/尾随空白；工具不静默 trim 或规范化字符，普通空格、标点和 Unicode 原样保留。第一版不在 Python 中实现生态命名正则，格式错误交给实例化后的原生工具与项目检查。
 
-ceiling 排除 monorepo 根配置，`/dev/null` 排除用户全局配置，临时 trusted paths 同时允许加载 overlay adapter 和 staging 模板配置。调用不使用 `MISE_CONFIG_FILE`，不执行 `mise trust`，不修改用户持久信任状态；其他调用者环境正常继承。
+AGENTS 采用单文件策略：overlay 只交付面向生成项目的 `AGENTS.md`，模板维护者说明迁出模板；`init-project` 在临时树中原地实例化，`apply-template` 继续保护 `AGENTS*`，不自动替换或合并已有项目的 agent 规则。
 
-根工具不覆盖 `MISE_AUTO_INSTALL`、`MISE_TASK_RUN_AUTO_INSTALL`、`MISE_EXEC_AUTO_INSTALL` 或 `MISE_OFFLINE`。默认情况下 mise 自动准备声明工具；调用者显式限制自动安装或网络时保持其策略，缺少工具或缓存则直接失败。adapter 不回退到系统 Go、Cargo、pnpm 或其他未声明工具。
+根 CI 每周运行一次 staging validation，重新解析当前兼容版本线并执行同一模板检查；它不自动写回来源或创建依赖更新 PR，失败只作为维护者人工调整的信号。
 
-已确认流程如下：
+每周 validation 明确排除 audit 与 release 演练。漏洞检查由已引导项目自己的 scheduled audit 负责，release helper 和平台打包由独立测试覆盖；定时任务只报告基础模板健康。
 
-1. 根工具读取 `[templates.<name>.locks]` 的输出清单。
-2. staging render 生成完整模板，并保留当前已提交的 `locks.outputs` 文件作为原生命令输入；首次尚不存在的允许输出可以在 adapter 执行前缺失。
-3. 根工具从 `overlays/<name>/mise.toml` 加载 monorepo 专属 adapter，并把 staging 模板根目录作为必填位置参数、把根任务收到的可选 `--bump` flag 透传给 overlay `locks:update`。
-4. overlay 任务默认在 staging 模板中运行一次 `mise -E ci lock`，由 mise 同时更新 `mise.lock` 与 `mise.ci.lock`；收到 `--bump` 时运行 `mise -E ci lock --bump`。随后运行 Go、Cargo 等模板专属原生命令，并统一运行 `aube install --lockfile-only -C <template-root>/docs` 更新 `docs/pnpm-lock.yaml`；不额外运行 `mise lock`，也不创建文档 `node_modules`。
-5. 根工具复用 renderer 的文件树扫描比较任务前后的 staging 状态，只允许清单中的路径变化；adapter 成功后，每个声明路径都必须存在于 staging 根目录内并且是普通、不可执行文件，拒绝目录和 symlink。
-6. 根工具把这些完整生成文件写回 `overlays/<name>/static/<path>`，然后执行普通 render 生成最终模板快照。
-7. 普通 `render` 和 `sync:check` 不运行原生命令；现有模板检查继续消费已提交的锁文件。
+根 CI 第一版移除依赖模板锁文件和固定模板 workspace 的 Go/Rust 项目缓存，只保留 mise 工具缓存。生成项目自己的语言缓存继续存在；staging 专用缓存等出现真实性能问题后再设计。
 
-正式回写具有失败回滚语义。根工具先复制完整的 `overlays/<name>/static` 到临时同级目录，只在副本中替换声明输出，再通过目录 rename 与备份切换正式来源并 render 模板；adapter、输出验证、回写、render、`sync:check` 或模板完整检查任一阶段失败时，恢复调用前的 overlay 与模板目录。全部验证成功后才删除备份。该合同覆盖正常错误和可处理的中断，不承诺抵抗 `SIGKILL` 或系统崩溃的跨目录原子性。
+每个 `overlays/<name>/mise.toml` 提供 monorepo-only 的验证 adapter，完整拥有该模板“生成临时状态并检查”的语言差异和执行顺序；它不是生成模板的一部分。Python 工具只负责临时 render、隔离 mise 与 Git 环境、调用 adapter、聚合错误并删除 staging，不理解 Cargo、Go、pnpm 或 pinact 的具体命令。
 
-`templates.toml` 只保存输出清单，因为根工具必须知道哪些路径可以从 staging 回写；固定的 `locks:update` 任务名不进入配置。命令实现和执行顺序由 overlay 根部的 `mise.toml` 拥有，根工具直接依赖统一 adapter interface。
+验证流程如下：
 
-锁文件原生命令有时会同时规范化依赖清单，例如 Go 的 `go mod tidy` 可能修改 `go.mod` 和 `go.sum`，因此清单表示完整的允许回写路径集合，而不局限于文件名包含 `lock` 的文件。
+1. Python 在临时目录生成完整的未实例化模板。
+2. 根工具使用固定、合成的 validation metadata 调用与 `init-project` 相同的项目实例化管线，使 staging 表示一个具体项目而不是含占位符的原始蓝图。
+3. Python 为已经实例化的 staging 建立只服务于检查的外部 Git dir/index，使 Git-based 检查看到最终路径与内容。
+4. 根工具从对应 overlay 启动验证 adapter，设置 `MISE_CEILING_PATHS=<monorepo-root>`、`MISE_GLOBAL_CONFIG_FILE=/dev/null` 和 overlay/staging 临时 trusted paths，不修改用户持久 trust 状态。
+5. adapter 在 staging 中运行 `mise -E ci lock`、模板专属依赖规范化、文档 lock 和 Action pinning，然后运行 staging 模板自己的 `mise run check`。
+6. validation fixture、锁文件、校验文件和 workflow digest 修改不回写任何真实来源或模板快照；流程结束后直接删除 staging。
 
-三个模板的 monorepo-only adapter 都使用 aube 更新文档依赖锁文件。aube 直接读写现有的 `docs/pnpm-lock.yaml`；Go 模板生成后的普通 `docs:*` 任务本轮仍保持使用 pnpm，不随 monorepo 维护 adapter 一同迁移。
+因此删除 `templates.toml` 的 `[templates.<name>.locks]`、根 `locks:update` 任务与 CLI、Python 的允许输出/回写/回滚逻辑。普通 `render` 与 `sync:check` 仍只处理声明式来源和未引导模板快照，不运行原生命令；根 CI 的模板 job 不再执行 `install --locked` 后检查已提交锁文件，而是调用上述临时验证流程。
 
-Go adapter 依次运行 `mise -C <template-root> exec -- go -C <template-root> mod tidy` 和 `mise -C <template-root> exec -- go -C <template-root>/tools/apply-existing mod tidy`，从 staging 模板配置解析 Go 版本，不运行 `go get -u`。根级 `--bump` 第一版只传给 mise 锁文件命令，不改变 Go module 版本。当前嵌套 module 只使用标准库，因此允许输出包含其现有的 `tools/apply-existing/go.mod`，但不包含尚不存在的 `tools/apply-existing/go.sum`；未来 tidy 产生该文件时，未声明输出检查必须失败并要求更新合同。
+`locks:update` 不保留只读兼容别名。根 `check` 是 staging 生成与模板检查的唯一入口，命令名不再暗示 monorepo 会保存依赖更新结果。
 
-Rust adapter 运行 `mise -C <template-root> exec -- cargo generate-lockfile --manifest-path <template-root>/Cargo.toml`，从 staging 模板配置解析 Rust/Cargo 版本，不运行 `cargo update`。允许输出为 `mise.lock`、`mise.ci.lock`、`Cargo.lock` 和 `docs/pnpm-lock.yaml`，不包含不应被该命令修改的 `Cargo.toml`。根级 `--bump` 第一版只影响 mise 锁文件命令，不切换 Cargo 行为。
-
-common adapter 不运行 placeholder `deps:fix` 或 `deps:update`，只运行 mise 锁文件命令和 aube 文档锁文件命令。允许输出为 `mise.lock`、`mise.ci.lock` 和 `docs/pnpm-lock.yaml`，不为尚不存在的语言依赖状态预留输出路径。
+根 `actions:update` 直接调用 pinact 更新 `.github/workflows/**`，删除 Python actions updater、CLI 和事务测试。shared、overlay 与模板快照保持兼容版本线，不参与根 digest 回写或 render。
 
 ### 三层检查边界
 
-锁文件更新和检查分属三个不同的 seam，不互相调用：
+1. **未引导模板快照**：`render` 生成兼容版本线和未固定 Action 引用，不承诺 `mise run check` 通过。
+2. **模板项目检查**：用户或验证 adapter 先生成依赖状态与 Action digest，再运行最终模板的 `mise run check`；模板自身仍保留 locked/frozen 的只读消费语义。
+3. **快照同步检查**：根级 `sync:check` 只比较 shared、overlay 来源和 `templates/<name>` 快照，不运行依赖生成命令。
 
-1. **模板项目检查**：最终生成的 `templates/<name>/mise run check` 只消费已提交的锁文件，验证项目在 locked/frozen 状态下能够工作；它不能读取 overlay 根部的 monorepo-only `mise.toml`，也不负责重新生成锁文件。
-2. **快照同步检查**：根级 `sync:check` 只验证 shared、overlay 来源和 `templates/<name>` 快照一致，不运行语言依赖更新命令。
-3. **更新流程验证**：monorepo 根工具在 staging 模板中调用 `overlays/<name>/mise.toml` 的 `locks:update`，验证生成命令成功、只修改声明路径，并负责回写；这属于 monorepo 维护工具的集成测试，不属于最终模板的 `mise run check`。
+## 已完成的后续收敛
 
-模板项目的普通 `mise run check` 不跨环境验证 `mise.ci.toml`，也不提供 `ci:tools:check` 或 `locks:check` 任务。GitHub Actions workflow 直接执行 `mise -E ci install --dry-run --locked`，验证基础与 CI 环境对应的两套 mise 锁文件；这是 workflow 的环境准备特例，不是项目检查任务。Go 的 `tidy -diff`、Cargo `--locked` 和 aube frozen lockfile 仍属于模板项目自身的只读消费检查。
-
-monorepo 不额外暴露真实锁文件生成 smoke-test task，也不在普通 pull request 检查中执行一遍不回写的 `locks:update`。根工具使用受控 fixture 集成测试验证 staging、允许输出、越界修改拒绝、来源回写和最终 render；真实原生命令只由维护者主动执行的 `locks:update`、依赖更新或 release 演练触发。
-
-越界修改检测直接复用 renderer 的文件树快照，比较相对路径、普通文件或 symlink 类型、可执行位、文件字节和 symlink 目标，不比较 mtime、目录权限和其他 Git 不跟踪的元数据，也不初始化临时 Git 仓库。任何不在 `locks.outputs` 中的变化都失败，包括 `.gitignore` 命中的缓存或 `node_modules`；选定的原生命令不得在 staging 中创建这些路径。
-
-允许输出验证只检查边界属性：路径必须留在 staging 根目录内，最终存在，并且是普通、不可执行文件。根工具拒绝目录和 symlink，但不解析 mise、Go、Cargo 或 pnpm 锁文件格式，也不强制文件非空；内容合法性由原生工具和后续 locked/frozen 检查负责。
-
-## 后续讨论队列
-
-mise、adapter 和锁文件流程的前置决策已经确认。接下来逐项讨论模板 workflow，每次只确认一个决策：
-
-1. `ci.yml` 必须保留的触发器、job 拓扑、缓存和审计差异。
-2. `ci.yml` 共享 layout 的语义 slot。
+- `ci.yml` 共享 layout 固定三个 job，只通过 project cache slot 保留语言构建缓存差异；pnpm 文档缓存由 shared 直接拥有。独立 `audit.yml` 共享审计协议，通过路径、最小工具安装和缓存 slot 保留语言差异。
+- `docs.yml` 共享 Pages 骨架并直接拥有 `node pnpm` 工具选择与 pnpm store 缓存，不再暴露 overlay slot。
+- `prepare-release.yml` 共享 release PR 协议，Rust 独立更新 Cargo 版本文件。
+- `release.yml` 共享 version、publish 和关闭旧 PR 协议，Go/Rust 完整 build matrix 作为大 adapter。
+- 根 Renovate 与三模板配置仍由同一 base/profile module 生成，但根 profile 只维护 monorepo 自身环境；模板来源与快照均不由根 Renovate 自动更新。
+- 根 `actions:update` 的旧实现会更新根、shared 和 overlay workflow 来源；新责任域要求模板来源保留兼容版本线，后续实现只应固定 monorepo 根维护 workflow。
+- 根 CI 分离 source/common/go-cli/rust job，调用稳定根任务并保留语言缓存。
 
 ## 现状验证记录
 
 - `mise run sync:check` 已确认 common、Go 和 Rust 生成快照均处于同步状态。
-- template-tool 的 14 个单元与本地 Git 集成测试通过，其中 10 个覆盖 renderer/锁更新，4 个覆盖首次 apply、保护路径、冲突现场、取消和单父提交历史。
-- 三个模板的本地 `mise run check` 均已验证通过。
-- 三个模板的真实 `locks:update` 均已执行成功；common 与 Rust 原生重生成后字节不变，Go 的 `git-cliff` 锁条目从基础 `mise.lock` 迁移到 `mise.ci.lock`。
-- Rust 模板完整检查耗时约 111 秒，后续本地和 CI 超时设置需要覆盖该时长。
-- 根级 `check-templates` 在进程被强制终止时可能遗留临时的 `templates/<name>/.git` 标记；在依赖该任务建设外层 CI 前需要修复中断清理行为。
+- template-tool 的 22 个单元与本地 Git 集成测试是设计转向前的验证记录；其中 renderer、apply、`init-project` 和 markerless Git 检查仍是有效证据，事务式锁回写与模板 Action 回写测试需要按新合同删除或改写。
+- 正式 `apply-template` entrypoint 已从当前 monorepo HEAD sparse fetch common、go-cli、rust 三份真实快照并分别应用到临时空仓库；生成 24/33/31 个 staged 路径，保护路径跳过、commit provenance、零冲突、无 `MERGE_HEAD` 和 HEAD 不移动均通过。
+- 正式 `init-project` entrypoint 已在三份干净 unborn 临时仓库创建无父初始提交，并从当前 monorepo HEAD 应用 common、go-cli、rust；初始与模板 commit provenance、staged 结果、保护路径、零冲突、无 `MERGE_HEAD` 和 HEAD 保持初始根提交均通过。
+- 三个模板曾在提交锁文件的旧状态下通过本地 `mise run check`；删除交付锁文件后，必须改由 staging 先生成临时状态再重新取得验证证据。
+- 三个模板的真实 `locks:update` 曾执行成功，但该结果只证明原生命令可用，不再支持回写设计；新流程复用这些原生命令并丢弃 staging 结果。
+- 三个模板的 release helper 已在 `MISE_OFFLINE=1` 的临时 Git 仓库演练：`release:version`/tag 统一得到 `0.1.0`/`v0.1.0`，notes、changelog、tag 创建与重复创建通过；common placeholder 生成零附件，Go/Rust package adapter 各生成一个 Linux x86_64 tar.gz。测试使用 Git plumbing 建历史并隔离用户全局 Git 配置，不接触任何远端或正式 tag。
+- 根级 `mise run check` 完整检查约 224 秒，本地与 CI 超时必须覆盖该时长。
+- 模板检查通过外部 `GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE` 提供真实 baseline，不写 `templates/<name>/.git`；忽略缓存不入 index，Go 嵌套 Git 测试显式隔离父级 Git 环境。
+- 根配置与三个模板配置已通过官方 `renovate/renovate:44.13.2` 容器中的 `renovate-config-validator --strict --no-global`；容器使用无网络、只读 bind mount 和默认非 root 用户。
+- 公开 sparse fetch、uvx 安装和 `v0.1.0` release/tag 未在本地阶段执行，需未来获得明确远端操作授权。
 
 ## 决策记录
 
@@ -302,29 +256,74 @@ mise、adapter 和锁文件流程的前置决策已经确认。接下来逐项�
 | D4 | shared `mise.ci.toml` 使用 `maintenance_tools`、`audit_tasks`、`release_version_tasks` 和 `release_package` 四个 slot | 已确认 |
 | D5 | shared 完整拥有五个公共 release helper，首次收敛只迁移所有权、不改变行为 | 已确认 |
 | D6 | common placeholder 成功退出，真实 adapter 直接传播失败，Go 审计串行 fail fast | 已确认 |
-| D7 | 锁文件由完整模板配置生成，普通 render 不运行原生锁文件命令 | 已确认 |
-| D8 | `templates.toml` 只配置允许输出；固定的 `locks:update` 任务名和语言命令都不进入模板 profile | 已确认 |
-| D9 | 第一版所有 `locks.outputs` 固定回写 `overlays/<name>/static`，不写入 shared；`generated/` 方案撤销 | 已确认 |
+| D7 | 锁文件由完整模板配置生成，普通 render 不运行原生锁文件命令 | 已取代：只在 staging 生成 |
+| D8 | `templates.toml` 只配置允许输出；固定的 `locks:update` 任务名和语言命令都不进入模板 profile | 已取代：删除 locks 配置与任务 |
+| D9 | 第一版所有 `locks.outputs` 固定回写 `overlays/<name>/static`，不写入 shared；`generated/` 方案撤销 | 已取代：不回写任何来源 |
 | D10 | `generated/` 第一版只允许保存锁文件生成结果 | 已撤销 |
 | D11 | 模板 `locks:update` 注册在普通 `mise.toml` | 已撤销 |
-| D12 | `locks.outputs` 表示允许更新的完整依赖状态路径集合，可包含 manifest | 已确认 |
-| D13 | 模板项目 `mise run check` 只消费已提交锁文件，不调用 monorepo 的 `locks:update` | 已确认 |
-| D18 | 不额外暴露真实锁文件生成 smoke-test task，也不纳入普通 PR 检查；真实生成由主动维护流程触发 | 已确认 |
-| D14 | overlay 根部的 monorepo-only `mise.toml` 提供 `locks:update` 命令组 | 已确认 |
-| D15 | overlay `locks:update` 接收一个模板根目录位置参数和可选 `--bump` flag，并只修改该 staging 目录 | 已确认 |
+| D12 | `locks.outputs` 表示允许更新的完整依赖状态路径集合，可包含 manifest | 已取代：删除 outputs 合同 |
+| D13 | 模板项目 `mise run check` 只消费已提交锁文件，不调用 monorepo 的 `locks:update` | 已取代：先生成临时状态再检查 |
+| D18 | 不额外暴露真实锁文件生成 smoke-test task，也不纳入普通 PR 检查；真实生成由主动维护流程触发 | 已取代：普通模板检查即执行临时生成 |
+| D14 | overlay 根部的 monorepo-only `mise.toml` 提供 `locks:update` 命令组 | 已取代：提供完整 `check` adapter |
+| D15 | overlay `locks:update` 接收一个模板根目录位置参数和可选 `--bump` flag，并只修改该 staging 目录 | 已取代：`check` 接收 staging 根目录 |
 | D16 | shared `mise.ci.toml` layout 的四个 slot 采用固定 TOML 落点 | 已确认 |
-| D17 | 普通 `check` 不跨环境验证 CI 工具，不新增 `ci:tools:check` 或 `locks:check`；workflow 直接调用 mise CLI 验证 CI 环境锁文件 | 已确认 |
-| D19 | overlay 锁文件 adapter 只运行一次 `mise -E ci lock`，同时生成 `mise.lock` 与 `mise.ci.lock` | 已确认 |
-| D20 | `locks:update` 默认保留已有 mise 版本解析；显式 `--bump` 时才重新解析模糊工具选择器 | 已确认 |
-| D21 | 三个 overlay adapter 统一使用 `aube install --lockfile-only` 更新 `docs/pnpm-lock.yaml`，不改变 Go 模板的日常 pnpm 任务 | 已确认 |
-| D22 | Go adapter 对根 module 和 `tools/apply-existing` 运行 `go mod tidy`，不主动升级依赖；输出清单暂不包含不存在的嵌套 `go.sum` | 已确认 |
+| D17 | 普通 `check` 不跨环境验证 CI 工具，不新增 `ci:tools:check` 或 `locks:check`；workflow 直接调用 mise CLI 验证 CI 环境锁文件 | 已取代：外层 check 先生成 CI 锁 |
+| D19 | overlay 锁文件 adapter 只运行一次 `mise -E ci lock`，同时生成 `mise.lock` 与 `mise.ci.lock` | 保留为 validation adapter 步骤 |
+| D20 | `locks:update` 默认保留已有 mise 版本解析；显式 `--bump` 时才重新解析模糊工具选择器 | 已取代：未引导模板每次从兼容线解析 |
+| D21 | 三个 overlay adapter 统一通过 staging 模板的 mise 环境执行 `pnpm install --lockfile-only`，与最终模板的日常 pnpm 任务使用同一工具 | 已确认 |
+| D22 | Go adapter 对根 module 和 `tools/apply-existing` 运行 `go mod tidy` | 已被 D61 取代：删除嵌套工具 |
 | D23 | Rust adapter 使用 `cargo generate-lockfile`，不使用 `cargo update`，允许输出不包含 `Cargo.toml` | 已确认 |
 | D24 | common adapter 只维护 mise 与文档锁文件，不调用 placeholder 项目依赖任务 | 已确认 |
-| D25 | staging 保留已有依赖状态文件；首次允许输出可在执行前缺失，但 adapter 成功后必须全部存在 | 已确认 |
-| D26 | 越界修改检测复用 renderer 文件树快照，不创建临时 Git 仓库，也不忽略任何未声明路径 | 已确认 |
-| D27 | `locks.outputs` 最终必须是 staging 内的普通、不可执行文件；拒绝目录和 symlink，不自研内容解析 | 已确认 |
-| D28 | `locks:update` 任一阶段失败时恢复调用前的 overlay 与模板目录；成功完成全部验证后才提交更新 | 已确认 |
+| D25 | staging 保留已有依赖状态文件；首次允许输出可在执行前缺失，但 adapter 成功后必须全部存在 | 已取代：staging 从未引导快照开始 |
+| D26 | 越界修改检测复用 renderer 文件树快照，不创建临时 Git 仓库，也不忽略任何未声明路径 | 已取代：生成状态允许留在 staging |
+| D27 | `locks.outputs` 最终必须是 staging 内的普通、不可执行文件；拒绝目录和 symlink，不自研内容解析 | 已取代：删除 outputs 合同 |
+| D28 | `locks:update` 任一阶段失败时恢复调用前的 overlay 与模板目录；成功完成全部验证后才提交更新 | 已取代：从不修改真实目录 |
 | D29 | adapter 使用 ceiling、禁用全局配置和进程级双路径临时信任，不修改用户 mise trust 状态 | 已确认 |
-| D30 | Go 与 Cargo 从 staging 模板 mise 配置解析；overlay 不重复语言版本，只声明 monorepo 维护用的 `aube = "1"` | 已确认 |
-| D31 | `locks:update` 尊重调用者的 mise auto-install 与 offline 设置，缺工具时失败，不回退到未声明系统工具 | 已确认 |
-| D32 | 删除冗余的 `locks.task` 配置；根工具直接依赖统一的 overlay adapter interface | 已确认 |
+| D30 | Go、Cargo 与 pnpm 都从 staging 模板 mise 配置解析；overlay 不重复声明工具版本 | 已确认 |
+| D31 | `locks:update` 尊重调用者的 mise auto-install 与 offline 设置，缺工具时失败，不回退到未声明系统工具 | 已取代：validation adapter 继承调用者策略 |
+| D32 | 删除冗余的 `locks.task` 配置；根工具直接依赖统一的 overlay adapter interface | 已取代：删除 locks interface |
+| D33 | `ci.yml`、`docs.yml`、`prepare-release.yml` 和 `release.yml` 使用 shared layout；只把真实语言缓存、版本文件和完整构建矩阵通过语义 adapter 保留，共同 pnpm 行为由 shared 直接拥有 | 已实施 |
+| D34 | 根 Renovate 与三模板配置由 base/profile module 生成，根配置忽略 `templates/**` | 已取代：根配置同时停止扫描 shared/overlay 模板来源 |
+| D35 | 根 `actions:update` 只更新根/shared/overlay 真实来源，并对回写、render 和同步检查提供回滚 | 已取代：模板来源保持兼容线，根工具只固定维护 workflow |
+| D36 | 根 CI 直接维护，分离 source/common/go-cli/rust job，不从 shared render | 已实施 |
+| D37 | Rust 独立 audit 只保留 schedule/manual，并调用 `mise -E ci run audit` | 已实施 |
+| D38 | 模板检查不写 `.git` 标记，使用外部 Git dir/index；忽略缓存不入 baseline，嵌套 Git 测试清理父级 Git 环境 | 已实施 |
+| D39 | `init-project` 只 bootstrap 干净 unborn repository，创建普通初始根提交后复用 `apply-template` 的 Git 应用内核 | 已实施；protected policy 由 D64 细化 |
+| D40 | 模板交付物不包含预生成锁文件或 Action digest；维护环境继续精确锁定 | 已确认 |
+| D41 | 未引导模板不保证绿色，生成依赖状态与 Action digest 后才进入可检查状态 | 已确认 |
+| D42 | 版本声明使用生态认可的兼容版本线，而不是机械 major | 已确认 |
+| D43 | 最终模板不增加 `mise run bootstrap`，用户文档列出真实引导命令 | 已确认 |
+| D44 | overlay 的 monorepo-only `check` adapter 拥有临时状态生成与模板检查顺序 | 已确认 |
+| D45 | Python 只管理 staging、隔离、调用和清理，不回写生成状态 | 已确认 |
+| D46 | 根 Renovate 只维护 monorepo 自身环境；模板兼容版本线人工维护，生成项目 Renovate 继续负责用户项目 | 已确认 |
+| D47 | 已引导项目提交全部生成锁定状态，并继续执行 locked、frozen 和 pinned 检查 | 已确认 |
+| D48 | 新项目引导与 staging 验证运行 `deps:update` 解析当前兼容版本；已有项目不自动升级 | 已确认 |
+| D49 | 文档站点继续使用 pnpm；aube 因 Renovate 不支持其原生锁文件而回退 | 已确认 |
+| D50 | staging 生成文档 lockfile，但普通模板验证不运行 `docs:build` | 已确认 |
+| D51 | 根 CI 每周定时运行 staging validation；失败不自动回写或创建 PR | 已确认 |
+| D52 | 每周 validation 不运行 audit 或 release，只检查基础模板健康 | 已确认 |
+| D53 | 文档任务拆分为 install、lock、install:locked；build/dev/preview 只依赖 locked 安装 | 已确认 |
+| D54 | 用户与 validation 的依赖引导顺序固定；其中“Go init 位于工具安装后”的部分已由 D58 取代 | 部分被取代 |
+| D55 | 删除 `locks:update` 且不保留兼容别名；根 `check` 是唯一 staging 验证入口 | 已确认 |
+| D56 | 第一版删除根 CI 的模板语言缓存，只保留 mise 工具缓存 | 已确认 |
+| D57 | 根 `actions:update` 直接调用 pinact；删除 Python actions updater 与事务测试 | 已确认 |
+| D58 | 项目实例化归 `template-tool`；`init-project` 自动完整实例化，`apply-template` 保持纯 staged apply | 已确认 |
+| D59 | `init-project` 以 CLI options 为正式 metadata 接口；TTY 可补问，非交互缺项失败且不猜 remote | 已确认 |
+| D60 | metadata 使用共享必填字段加 profile 专属字段；显示名、仓库身份与语言标识符分离 | 已确认 |
+| D61 | 蓝图只保留一个占位符 README；删除 Go 两个一次性工具与 init task，apply 不自动实例化 README | 已确认 |
+| D62 | 根 README 统一承载外部使用说明；overlay README 只介绍模板特有功能和结构 | 已确认 |
+| D63 | 蓝图只保留一个项目规则 `AGENTS.md`；删除 `AGENTS.template.md`，apply 继续保护 `AGENTS*` | 已确认 |
+| D64 | `init-project` 使用 clean-target apply policy 完整应用实例化模板；已有项目 denylist 只属于 `apply-template` | 已确认 |
+| D65 | staging validation 先用固定合成 metadata 复用项目实例化管线，再由 overlay adapter 生成状态并检查 | 已确认 |
+| D66 | 实例化使用严格 uppercase token engine；不二次运行 Jinja，不提供语言专属 imperative hook | 已确认 |
+| D67 | `templates.toml` 是 render/apply/instantiate 的 profile 合同；应用器版本静态定义支持的字段/transform 词汇 | 已确认；由 D71 细化静态 CLI |
+| D68 | 实例化 schema 采用最小形状，不引入字段对象 DSL、默认值或命令插值 | 已确认；help 来自静态 CLI |
+| D69 | derived 白名单首版仅含 `hyphen-to-underscore`、`json-string`；不同上下文使用独立 token | 已确认 |
+| D70 | metadata 必须非空单行且无控制/边缘空白；不静默规范化，不复制生态命名正则 | 已确认 |
+| D71 | `init-project` 使用静态 argparse；profile 只选择必填字段与映射，不保证跨版本模板 schema 兼容 | 已确认 |
+| D72 | `apply-template`、`init-project` 的 `--ref` 必填；文档显式对齐应用器与模板 ref，不验证兼容 | 已确认 |
+| D73 | strict token engine 同时替换内容和相对路径；路径计划先验证安全、无越界且无冲突 | 已确认 |
+| D74 | token 语义分离显示名、描述、GitHub 身份、语言 package/module、crate identifier 与 binary 名 | 已确认 |
+| D75 | 删除身份相关 legacy sentinel；实例化器不提供按旧字面量替换的兼容分支 | 已确认 |
+| D76 | legacy identity 检查归各 overlay 的 monorepo-only validation adapter，不进入模板或 `template-tool` | 已确认 |
+| D77 | `apply-template` 保留内容/路径 token 为 staged changes；不接收 metadata，输出未实例化审查 HINT | 已确认 |

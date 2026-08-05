@@ -51,6 +51,9 @@ func TestPlanTemplateFilesIncludesDocsWhenDocsMissing(t *testing.T) {
 	if !hasTemplatePath(files, ".github/workflows/prepare-release.yml") {
 		t.Fatalf("planTemplateFiles() missing .github/workflows/prepare-release.yml")
 	}
+	if !hasTemplatePath(files, ".github/workflows/audit.yml") {
+		t.Fatalf("planTemplateFiles() missing .github/workflows/audit.yml")
+	}
 	if hasTemplatePath(files, ".github/workflows/actions-up.yml") {
 		t.Fatalf("planTemplateFiles() included removed actions-up workflow")
 	}

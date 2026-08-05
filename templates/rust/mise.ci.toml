@@ -118,4 +118,3 @@ fi
 description = "Build and package a release binary"
 file = "scripts/package-release"
 env = { RELEASE_BINARY = "{{ vars.rust_binary_name }}" }
-
