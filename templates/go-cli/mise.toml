@@ -20,7 +20,6 @@ pinact = "4"
 typos = "1.48.0"
 betterleaks = "1"
 actionlint = "1"
-git-cliff = "latest"
 
 [vars]
 nllint_excludes = ""

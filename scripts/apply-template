@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly default_repository="https://github.com/YewFence/template.git"
+repository="${default_repository}"
+reference="main"
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+arguments=("$@")
+for ((index = 0; index < ${#arguments[@]}; index++)); do
+  case "${arguments[index]}" in
+    --repo)
+      ((index + 1 < ${#arguments[@]})) || die '--repo requires a value'
+      repository="${arguments[index + 1]}"
+      ((index++))
+      ;;
+    --repo=*)
+      repository="${arguments[index]#--repo=}"
+      ;;
+    --ref)
+      ((index + 1 < ${#arguments[@]})) || die '--ref requires a value'
+      reference="${arguments[index + 1]}"
+      ((index++))
+      ;;
+    --ref=*)
+      reference="${arguments[index]#--ref=}"
+      ;;
+  esac
+done
+
+command -v git >/dev/null 2>&1 || die 'git is required'
+command -v python3 >/dev/null 2>&1 ||
+  die 'python3 is required; use the supported uvx apply-template command instead'
+
+readonly temporary="$(mktemp -d "${TMPDIR:-/tmp}/apply-template.XXXXXX")"
+cleanup() {
+  rm -rf -- "${temporary}"
+}
+trap cleanup EXIT
+
+git -C "${temporary}" init --quiet
+git -C "${temporary}" remote add origin "${repository}"
+git -C "${temporary}" sparse-checkout init --cone
+git -C "${temporary}" sparse-checkout set tools/template-tool
+git -C "${temporary}" fetch --quiet --no-tags --depth=1 --filter=blob:none origin "${reference}"
+git -C "${temporary}" checkout --quiet --detach FETCH_HEAD
+
+readonly source="${temporary}/tools/template-tool/src"
+PYTHONPATH="${source}" python3 -c 'import jinja2' >/dev/null 2>&1 ||
+  die 'this application version needs Python dependencies unavailable to system Python; use uvx instead'
+
+PYTHONPATH="${source}" python3 -m template_tool apply "$@"

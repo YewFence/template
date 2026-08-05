@@ -37,3 +37,15 @@ arg "[template]" help="Template to check; defaults to all" {
 run = '''
 uv run --project tools/template-tool check-templates{% if usage.template %} "{{ usage.template }}"{% endif %} --root .
 '''
+
+[tasks."locks:update"]
+description = "Regenerate one template's native dependency state"
+usage = '''
+flag "--bump" help="Re-resolve fuzzy mise tool versions"
+arg "<template>" help="Template to update" {
+  choices "common" "go-cli" "rust"
+}
+'''
+run = '''
+uv run --project tools/template-tool locks-update{% if usage.bump %} --bump{% endif %} "{{ usage.template }}" --root .
+'''

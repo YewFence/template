@@ -65,10 +65,6 @@ run = 'echo "[PLACEHOLDER] Replace build with the project build command, such as
 description = "[PLACEHOLDER] Check whether the project builds"
 run = 'echo "[PLACEHOLDER] Replace build:check with a compile-only check, such as cargo check or an equivalent project command"'
 
-[tasks.audit]
-description = "[PLACEHOLDER] Audit project dependencies for known vulnerabilities"
-run = 'echo "[PLACEHOLDER] Replace audit with the project security audit, such as cargo audit or govulncheck ./..."'
-
 [tasks."leaks:check"]
 description = "Run betterleaks checks"
 run = "betterleaks git . --pre-commit --redact --no-banner"

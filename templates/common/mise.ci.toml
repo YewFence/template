@@ -1,6 +1,12 @@
 [tools]
 git-cliff = "latest"
 
+
+[tasks.audit]
+description = "[PLACEHOLDER] Audit project dependencies for known vulnerabilities"
+run = 'echo "[PLACEHOLDER] Replace audit with the project security audit, such as cargo audit or govulncheck ./..."'
+
+
 [tasks.'actions:pin:check']
 # Need github token to avoid rate limit
 description = "Check for action pinned version"
@@ -10,6 +16,13 @@ run = "pinact run --check"
 # Need github token to avoid rate limit
 description = "Check for outdated action versions"
 run = "pinact run --update --diff"
+
+[tasks.'actions:versions:check']
+description = "Check pinned GitHub Action versions and outdated releases"
+run = [
+  { task = "actions:pin:check" },
+  { task = "actions:outdated" },
+]
 
 [tasks.'release:version']
 description = "Print the next release version without the v prefix"
@@ -24,6 +37,8 @@ fi
 
 printf '%s\\n' "${version}"
 """
+
+
 
 [tasks.'release:tag']
 description = "Print the release tag, automatically generate if RELEASE_TAG is not set"
@@ -96,3 +111,4 @@ fi
 [tasks.'release:package']
 description = "[PLACEHOLDER] Package project release artifacts"
 run = 'echo "[PLACEHOLDER] Replace release:package with project-specific packaging, or remove it when releases have no assets"'
+

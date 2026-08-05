@@ -1,0 +1,13 @@
+[tools]
+aube = "1"
+
+[tasks."locks:update"]
+description = "Update generated dependency state for a staging template"
+usage = '''
+flag "--bump" help="Re-resolve fuzzy mise tool versions"
+arg "<template_root>" help="Staging template root"
+'''
+run = '''
+mise -C "{{ usage.template_root }}" -E ci lock{% if usage.bump %} --bump{% endif %}
+aube install --lockfile-only -C "{{ usage.template_root }}/docs"
+'''

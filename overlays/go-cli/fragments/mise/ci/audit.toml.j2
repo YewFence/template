@@ -1,0 +1,14 @@
+[tasks.audit]
+description = "Run Go dependency verification and vulnerability checks"
+run = [
+  { task = "mod:verify" },
+  { task = "vuln:check" },
+]
+
+[tasks."vuln:check"]
+description = "Run Go vulnerability checks"
+run = "govulncheck ./..."
+
+[tasks.'mod:verify']
+description = "Verify Go module dependencies"
+run = "go mod verify"

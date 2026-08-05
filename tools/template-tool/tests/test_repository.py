@@ -123,6 +123,92 @@ class TemplateRepositoryTest(unittest.TestCase):
         with self.assertRaisesRegex(TemplateError, "escapes"):
             TemplateRepository(self.root).render("example")
 
+    def test_lock_update_rewrites_declared_outputs_and_rerenders(self) -> None:
+        self.write_config(
+            '[templates.example.locks]\n'
+            'outputs = ["state.lock"]\n'
+        )
+        source = self.root / "overlays/example/static/state.lock"
+        source.write_text("before\n", encoding="utf-8")
+        repository = TemplateRepository(self.root)
+        repository.render("example")
+
+        calls: list[tuple[Path, bool]] = []
+
+        def adapter(staging: Path, bump: bool) -> None:
+            calls.append((staging, bump))
+            (staging / "state.lock").write_text("after\n", encoding="utf-8")
+
+        repository.update_locks("example", True, adapter)
+        self.assertEqual(calls[0][1], True)
+        self.assertEqual(source.read_text(), "after\n")
+        self.assertEqual(
+            (self.root / "templates/example/state.lock").read_text(), "after\n"
+        )
+        self.assertTrue(repository.check("example").matches)
+
+    def test_lock_update_rejects_undeclared_changes_without_touching_sources(self) -> None:
+        self.write_config(
+            '[templates.example.locks]\n'
+            'outputs = ["state.lock"]\n'
+        )
+        source = self.root / "overlays/example/static/state.lock"
+        source.write_text("before\n", encoding="utf-8")
+        repository = TemplateRepository(self.root)
+        repository.render("example")
+        target = self.root / "templates/example/state.lock"
+
+        def adapter(staging: Path, bump: bool) -> None:
+            (staging / "state.lock").write_text("after\n", encoding="utf-8")
+            (staging / "unexpected").write_text("forbidden\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(TemplateError, "undeclared"):
+            repository.update_locks("example", False, adapter)
+        self.assertEqual(source.read_text(), "before\n")
+        self.assertEqual(target.read_text(), "before\n")
+
+    def test_lock_update_rejects_symlink_outputs_and_rolls_back_validation(self) -> None:
+        self.write_config(
+            '[templates.example.locks]\n'
+            'outputs = ["state.lock"]\n'
+        )
+        source = self.root / "overlays/example/static/state.lock"
+        source.write_text("before\n", encoding="utf-8")
+        repository = TemplateRepository(self.root)
+        repository.render("example")
+        target = self.root / "templates/example/state.lock"
+
+        def adapter(staging: Path, bump: bool) -> None:
+            (staging / "state.lock").unlink()
+            os.symlink("missing", staging / "state.lock")
+
+        with self.assertRaisesRegex(TemplateError, "regular file"):
+            repository.update_locks("example", False, adapter)
+        self.assertEqual(source.read_text(), "before\n")
+        self.assertEqual(target.read_text(), "before\n")
+
+    def test_lock_update_rolls_back_after_final_validation_failure(self) -> None:
+        self.write_config(
+            '[templates.example.locks]\n'
+            'outputs = ["state.lock"]\n'
+        )
+        source = self.root / "overlays/example/static/state.lock"
+        source.write_text("before\n", encoding="utf-8")
+        repository = TemplateRepository(self.root)
+        repository.render("example")
+        target = self.root / "templates/example/state.lock"
+
+        def adapter(staging: Path, bump: bool) -> None:
+            (staging / "state.lock").write_text("after\n", encoding="utf-8")
+
+        def fail_validation(template: str) -> None:
+            raise TemplateError("fixture validation failure")
+
+        with self.assertRaisesRegex(TemplateError, "fixture validation"):
+            repository.update_locks("example", False, adapter, fail_validation)
+        self.assertEqual(source.read_text(), "before\n")
+        self.assertEqual(target.read_text(), "before\n")
+
 
 if __name__ == "__main__":
     unittest.main()

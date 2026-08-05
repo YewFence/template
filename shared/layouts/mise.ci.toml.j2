@@ -1,13 +1,8 @@
 [tools]
-"go:golang.org/x/vuln/cmd/govulncheck" = "latest"
+git-cliff = "latest"
+<$ slot("maintenance_tools", optional=true) $>
 
-[tasks."vuln:check"]
-description = "Run Go vulnerability checks"
-run = "govulncheck ./..."
-
-[tasks.'mod:verify']
-description = "Verify Go module dependencies"
-run = "go mod verify"
+<$ slot("audit_tasks") $>
 
 [tasks.'actions:pin:check']
 # Need github token to avoid rate limit
@@ -18,6 +13,13 @@ run = "pinact run --check"
 # Need github token to avoid rate limit
 description = "Check for outdated action versions"
 run = "pinact run --update --diff"
+
+[tasks.'actions:versions:check']
+description = "Check pinned GitHub Action versions and outdated releases"
+run = [
+  { task = "actions:pin:check" },
+  { task = "actions:outdated" },
+]
 
 [tasks.'release:version']
 description = "Print the next release version without the v prefix"
@@ -32,6 +34,8 @@ fi
 
 printf '%s\\n' "${version}"
 """
+
+<$ slot("release_version_tasks", optional=true) $>
 
 [tasks.'release:tag']
 description = "Print the release tag, automatically generate if RELEASE_TAG is not set"
@@ -102,5 +106,4 @@ fi
 """
 
 [tasks.'release:package']
-description = "Package the built CLI artifact for a release"
-file = "scripts/release-package.sh"
+<$ slot("release_package") $>

@@ -14,6 +14,8 @@ dependencies = [
 template-tool = "template_tool.cli:main"
 render-template = "template_tool.cli:render_main"
 check-templates = "template_tool.cli:check_main"
+locks-update = "template_tool.cli:locks_main"
+apply-template = "template_tool.cli:apply_main"
 
 [build-system]
 requires = ["uv_build>=0.12.1,<0.13.0"]

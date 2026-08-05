@@ -1,7 +1,55 @@
 version = 1
 
+[apply]
+protected = [
+  ".gitignore",
+  "AGENTS.md",
+  "AGENTS.*",
+  "LICENSE*",
+  "LICENCE*",
+  "COPYING*",
+  "NOTICE*",
+]
+hints = [
+  "Protected project identity and workspace-control files are intentionally left unchanged; compare them with the selected template manually when needed.",
+]
+
 [templates.common]
+ [templates.common.locks]
+ outputs = [
+   "mise.lock",
+   "mise.ci.lock",
+   "docs/pnpm-lock.yaml",
+ ]
+ [templates.common.slots."mise.ci.toml"]
+ audit_tasks = ["shared:mise/ci/common-audit.toml.j2"]
+ release_package = ["shared:mise/ci/common-package.toml.j2"]
 
 [templates.go-cli]
+ [templates.go-cli.locks]
+ outputs = [
+   "mise.lock",
+   "mise.ci.lock",
+   "go.mod",
+   "go.sum",
+   "tools/apply-existing/go.mod",
+   "docs/pnpm-lock.yaml",
+ ]
+ [templates.go-cli.slots."mise.ci.toml"]
+ maintenance_tools = ["overlay:mise/ci/maintenance.toml.j2"]
+ audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
+ release_package = ["overlay:mise/ci/package.toml.j2"]
 
 [templates.rust]
+ [templates.rust.locks]
+ outputs = [
+   "mise.lock",
+   "mise.ci.lock",
+   "Cargo.lock",
+   "docs/pnpm-lock.yaml",
+ ]
+ [templates.rust.slots."mise.ci.toml"]
+ maintenance_tools = ["overlay:mise/ci/maintenance.toml.j2"]
+ audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
+ release_version_tasks = ["overlay:mise/ci/release-version.toml.j2"]
+ release_package = ["overlay:mise/ci/package.toml.j2"]

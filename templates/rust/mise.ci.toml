@@ -3,9 +3,11 @@ git-cliff = "latest"
 "cargo:cargo-edit" = "0.13.13"
 "aqua:rustsec/rustsec/cargo-audit" = "0.22.2"
 
+
 [tasks.audit]
 description = "Audit Rust dependencies for security advisories"
 run = "cargo audit --deny warnings"
+
 
 [tasks.'actions:pin:check']
 # Need github token to avoid rate limit
@@ -16,6 +18,13 @@ run = "pinact run --check"
 # Need github token to avoid rate limit
 description = "Check for outdated action versions"
 run = "pinact run --update --diff"
+
+[tasks.'actions:versions:check']
+description = "Check pinned GitHub Action versions and outdated releases"
+run = [
+  { task = "actions:pin:check" },
+  { task = "actions:outdated" },
+]
 
 [tasks.'release:version']
 description = "Print the next release version without the v prefix"
@@ -35,6 +44,7 @@ printf '%s\\n' "${version}"
 description = "Update the Cargo package and lockfile to the release version"
 usage = 'arg "<version>" help="Release version without the v prefix"'
 run = 'cargo set-version "{{ usage.version }}"'
+
 
 [tasks.'release:tag']
 description = "Print the release tag, automatically generate if RELEASE_TAG is not set"
@@ -108,3 +118,4 @@ fi
 description = "Build and package a release binary"
 file = "scripts/package-release"
 env = { RELEASE_BINARY = "{{ vars.rust_binary_name }}" }
+

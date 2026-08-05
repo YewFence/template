@@ -11,6 +11,7 @@ import tomllib
 import uuid
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from collections.abc import Callable
 from typing import Literal
 
 from jinja2 import Environment, StrictUndefined, nodes
@@ -30,6 +31,7 @@ class TemplateProfile:
     name: str
     path_rules: dict[PurePosixPath, PathRule]
     slots: dict[PurePosixPath, dict[str, tuple[str, ...]]]
+    lock_outputs: tuple[PurePosixPath, ...]
 
 
 @dataclass(frozen=True)
@@ -113,6 +115,100 @@ class TemplateRepository:
             self._remove_path(staged)
         return RenderResult(template, differences)
 
+    def update_locks(
+        self,
+        template: str,
+        bump: bool,
+        run_adapter: Callable[[Path, bool], None],
+        validate: Callable[[str], None] | None = None,
+    ) -> None:
+        profile = self._profile(template)
+        outputs = set(profile.lock_outputs)
+        if not outputs:
+            raise TemplateError(f"template {template!r} has no locks.outputs")
+
+        staged = self._build_staged_tree(profile)
+        overlay_root = self.overlays_root / template
+        overlay_static = overlay_root / "static"
+        before = self._scan_tree(staged)
+        try:
+            run_adapter(staged, bump)
+            after = self._scan_tree(staged)
+            changes = self._tree_difference(before, after)
+            changed_paths = {
+                PurePosixPath(line.split(": ", 1)[1])
+                for line in changes
+                if ": " in line
+            }
+            unexpected = changed_paths - outputs
+            if unexpected:
+                paths = ", ".join(str(path) for path in sorted(unexpected, key=str))
+                raise TemplateError(f"locks adapter changed undeclared paths: {paths}")
+            self._validate_lock_outputs(staged, profile.lock_outputs)
+
+            replacement = Path(
+                tempfile.mkdtemp(prefix=f".locks-{template}-", dir=overlay_root)
+            )
+            self._remove_path(replacement)
+            shutil.copytree(overlay_static, replacement, symlinks=True)
+            for output in profile.lock_outputs:
+                source = staged.joinpath(*output.parts)
+                destination = replacement.joinpath(*output.parts)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                self._remove_path(destination)
+                shutil.copy2(source, destination, follow_symlinks=False)
+
+            overlay_backup = overlay_root / f".static.backup-{uuid.uuid4().hex}"
+            target = self.templates_root / template
+            target_backup = self.templates_root / f".{template}.backup-{uuid.uuid4().hex}"
+            target_existed = os.path.lexists(target)
+            overlay_backup_created = False
+            overlay_swapped = False
+            target_backup_created = False
+            try:
+                os.replace(overlay_static, overlay_backup)
+                overlay_backup_created = True
+                os.replace(replacement, overlay_static)
+                overlay_swapped = True
+                if target_existed:
+                    os.replace(target, target_backup)
+                    target_backup_created = True
+                self.render(template)
+                result = self.check(template)
+                if not result.matches:
+                    details = "\n".join(result.differences)
+                    raise TemplateError(f"rendered template is not in sync:\n{details}")
+                if validate is not None:
+                    validate(template)
+            except Exception:
+                if not target_existed or target_backup_created:
+                    self._remove_path(target)
+                if target_backup_created:
+                    os.replace(target_backup, target)
+                if overlay_swapped:
+                    self._remove_path(overlay_static)
+                if overlay_backup_created:
+                    os.replace(overlay_backup, overlay_static)
+                raise
+            else:
+                self._remove_path(target_backup)
+                self._remove_path(overlay_backup)
+        finally:
+            self._remove_path(staged)
+
+    @staticmethod
+    def _validate_lock_outputs(
+        staged: Path, outputs: tuple[PurePosixPath, ...]
+    ) -> None:
+        for output in outputs:
+            path = staged.joinpath(*output.parts)
+            if path.is_symlink() or not path.is_file():
+                raise TemplateError(
+                    f"locks output must be a regular file: {output}"
+                )
+            if path.stat(follow_symlinks=False).st_mode & stat.S_IXUSR:
+                raise TemplateError(f"locks output must not be executable: {output}")
+
     def _profile(self, template: str) -> TemplateProfile:
         try:
             return self._profiles[template]
@@ -178,12 +274,26 @@ class TemplateRepository:
                     bindings[slot_name] = tuple(raw_fragments)
                 slots[output_path] = bindings
 
-            unknown_keys = set(raw_profile) - {"paths", "slots"}
+            raw_locks = raw_profile.get("locks", {})
+            if not isinstance(raw_locks, dict):
+                raise TemplateError(f"templates.{name}.locks must be a table")
+            raw_outputs = raw_locks.get("outputs", [])
+            if not isinstance(raw_outputs, list) or not all(
+                isinstance(output, str) for output in raw_outputs
+            ):
+                raise TemplateError(f"templates.{name}.locks.outputs must be an array of strings")
+            lock_outputs = tuple(
+                self._validate_output_path(output) for output in raw_outputs
+            )
+            if len(set(lock_outputs)) != len(lock_outputs):
+                raise TemplateError(f"templates.{name}.locks.outputs must not repeat paths")
+
+            unknown_keys = set(raw_profile) - {"paths", "slots", "locks"}
             if unknown_keys:
                 keys = ", ".join(sorted(unknown_keys))
                 raise TemplateError(f"unknown keys in templates.{name}: {keys}")
 
-            profiles[name] = TemplateProfile(name, path_rules, slots)
+            profiles[name] = TemplateProfile(name, path_rules, slots, lock_outputs)
 
         return profiles
 
@@ -503,6 +613,22 @@ class TemplateRepository:
                 differences.append(f"executable bit mismatch: {path}")
             if expected_entry.content != actual_entry.content:
                 differences.extend(cls._content_diff(path, expected_entry, actual_entry))
+        return differences
+
+    @classmethod
+    def _tree_difference(
+        cls, expected: dict[PurePosixPath, TreeEntry], actual: dict[PurePosixPath, TreeEntry]
+    ) -> list[str]:
+        differences: list[str] = []
+        for path in sorted(set(expected) | set(actual), key=str):
+            expected_entry = expected.get(path)
+            actual_entry = actual.get(path)
+            if expected_entry is None:
+                differences.append(f"unexpected path: {path}")
+            elif actual_entry is None:
+                differences.append(f"missing path: {path}")
+            elif expected_entry != actual_entry:
+                differences.append(f"modified path: {path}")
         return differences
 
     @staticmethod
