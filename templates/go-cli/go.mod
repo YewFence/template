@@ -1,4 +1,4 @@
-module github.com/example/your-cli
+module {{GO_MODULE}}
 
 go 1.26.5
 

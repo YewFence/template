@@ -166,6 +166,12 @@ class TemplateRepository:
     def validation_metadata(self, template: str) -> dict[str, str]:
         return dict(self._profile(template).instantiation.validation_metadata)
 
+    def required_metadata(self, template: str) -> tuple[str, ...]:
+        return self._profile(template).instantiation.required
+
+    def instantiation_spec(self, template: str) -> InstantiationSpec:
+        return self._profile(template).instantiation
+
     def instantiate(self, template: str, root: Path | str, metadata: dict[str, str]) -> None:
         try:
             instantiate_tree(Path(root), self._profile(template).instantiation, metadata)

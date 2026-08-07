@@ -1,5 +1,5 @@
 {
-  "name": "your-cli-docs",
+  "name": "{{BINARY_NAME}}-docs",
   "private": true,
   "type": "module",
   "scripts": {

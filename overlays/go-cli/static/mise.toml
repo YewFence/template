@@ -31,11 +31,6 @@ nllint_excludes = ""
 PINACT_MIN_AGE = "3"
 PINACT_GITHUB_TOKEN = { value = "${MISE_GITHUB_TOKEN:-}", redact = true }
 
-[tasks.init]
-description = "Initialize project name, module path, and repository information from the template"
-run = "GO111MODULE=off go run ./tools/init-template/main.go --fresh-git"
-interactive = true
-
 [tasks."mod:tidy"]
 description = "Tidy Go module dependencies"
 run = "go mod tidy"
@@ -111,15 +106,15 @@ alias = "f"
 
 [tasks.cli]
 description = "Run the CLI"
-run = "go run ./cmd/your-cli"
+run = "go run ./cmd/{{BINARY_NAME}}"
 
 [tasks.'cli:install']
 description = "Install the CLI into the local Go bin directory"
-run = 'go install -trimpath -ldflags="-X main.version=${BUILD_VERSION:-dev}" ./cmd/your-cli'
+run = 'go install -trimpath -ldflags="-X main.version=${BUILD_VERSION:-dev}" ./cmd/{{BINARY_NAME}}'
 
 [tasks.build]
 description = "Build the CLI executable"
-run = 'go build -trimpath -ldflags="-s -w -X main.version=${BUILD_VERSION:-dev}" -o "${BUILD_OUTPUT_DIR:-bin}/" ./cmd/your-cli'
+run = 'go build -trimpath -ldflags="-s -w -X main.version=${BUILD_VERSION:-dev}" -o "${BUILD_OUTPUT_DIR:-bin}/" ./cmd/{{BINARY_NAME}}'
 
 [tasks."build:check"]
 description = "Check whether the CLI builds"
@@ -128,7 +123,7 @@ run = "go test -run '^$' ./cmd/..."
 [tasks."actions:check"]
 description = "Run actionlint"
 depends = ["actions:pin-offline:check"]
-run = "actionlint"
+run = "actionlint .github/workflows/*.yml"
 
 [tasks.'actions:update']
 description = "Update GitHub Action versions and pin to commit hashes"
@@ -141,22 +136,32 @@ run = "unset PINACT_MIN_AGE && pinact run --fix=false --no-api"
 [tasks.'docs:install']
 description = "Install documentation site dependencies"
 dir = "docs"
+run = "pnpm install"
+
+[tasks.'docs:lock']
+description = "Generate the documentation lockfile without installing dependencies"
+dir = "docs"
+run = "pnpm install --lockfile-only"
+
+[tasks.'docs:install:locked']
+description = "Install documentation dependencies from the committed lockfile"
+dir = "docs"
 run = "pnpm install --frozen-lockfile"
 
 [tasks.'docs:dev']
 description = "Start the VitePress documentation site"
-depends = ["docs:install"]
+depends = ["docs:install:locked"]
 dir = "docs"
 run = "pnpm run dev"
 
 [tasks.'docs:build']
 description = "Build the VitePress documentation site"
-depends = ["docs:install"]
+depends = ["docs:install:locked"]
 dir = "docs"
 run = "pnpm run build"
 
 [tasks.'docs:preview']
 description = "Preview the VitePress documentation site"
-depends = ["docs:install"]
+depends = ["docs:install:locked"]
 dir = "docs"
 run = "pnpm run preview"

@@ -9,11 +9,11 @@ import (
 
 func NewRootCommand(version string) *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:   "your-cli",
+		Use:   "{{BINARY_NAME}}",
 		Short: "Your CLI description",
 		Long:  "Your CLI description.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := fmt.Fprintln(cmd.OutOrStdout(), "Hello from your-cli")
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), "Hello from {{BINARY_NAME}}")
 			return err
 		},
 	}

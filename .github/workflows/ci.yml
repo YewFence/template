@@ -6,6 +6,8 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 1"
 
 permissions:
   contents: read
@@ -51,13 +53,6 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           cache_key: "mise-monorepo-{{file_hash}}"
 
-      - name: Install template tools
-        env:
-          MISE_CEILING_PATHS: ${{ github.workspace }}
-          MISE_GLOBAL_CONFIG_FILE: /dev/null
-          MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}/templates/common
-        run: mise -C templates/common install --locked
-
       - name: Check template
         run: mise run check common
 
@@ -74,22 +69,6 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           cache_key: "mise-monorepo-{{file_hash}}"
 
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: monorepo-go-${{ runner.os }}-${{ hashFiles('templates/go-cli/go.sum') }}
-          restore-keys: |
-            monorepo-go-${{ runner.os }}-
-
-      - name: Install template tools
-        env:
-          MISE_CEILING_PATHS: ${{ github.workspace }}
-          MISE_GLOBAL_CONFIG_FILE: /dev/null
-          MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}/templates/go-cli
-        run: mise -C templates/go-cli install --locked
-
       - name: Check template
         run: mise run check go-cli
 
@@ -105,18 +84,6 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           cache_key: "mise-monorepo-{{file_hash}}"
-
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          workspaces: templates/rust
-          shared-key: monorepo-rust
-
-      - name: Install template tools
-        env:
-          MISE_CEILING_PATHS: ${{ github.workspace }}
-          MISE_GLOBAL_CONFIG_FILE: /dev/null
-          MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}/templates/rust
-        run: mise -C templates/rust install --locked
 
       - name: Check template
         run: mise run check rust

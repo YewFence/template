@@ -2,8 +2,8 @@
 layout: home
 
 hero:
-  name: '{{PROJECT_NAME}}'
-  text: '{{PROJECT_DESCRIPTION}}'
+  name: {{PROJECT_NAME_JSON}}
+  text: {{PROJECT_DESCRIPTION_JSON}}
   tagline: '[PLACEHOLDER] Add a concise project tagline.'
   actions:
     - theme: brand

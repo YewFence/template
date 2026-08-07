@@ -6,9 +6,12 @@ import re
 import subprocess
 import tempfile
 import tomllib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from .instantiation import InstantiationError, build_token_values
 from .repository import TemplateError, TemplateRepository
 
 
@@ -51,9 +54,11 @@ def initialize_project(
     target: Path | str,
     metadata: dict[str, str],
 ) -> InitProjectResult:
+    _validate_template_name(template)
     target_root = _unborn_target_root(Path(target))
     _require_clean_repository(target_root)
     _require_idle_repository(target_root)
+    _validate_metadata_for_template(repository, reference, template, metadata)
     try:
         _run(
             [
@@ -86,8 +91,50 @@ def apply_template(
     reference: str,
     template: str,
     target: Path | str,
+    metadata: dict[str, str] | None = None,
+    *,
+    keep_tokens: bool = False,
 ) -> ApplyResult:
-    return _apply_template(repository, reference, template, target, metadata=None, protect=True)
+    _validate_template_name(template)
+    if keep_tokens and metadata is not None:
+        raise ApplicationError("--keep-tokens cannot be combined with metadata")
+    if not keep_tokens:
+        _validate_metadata_for_template(repository, reference, template, metadata or {})
+    return _apply_template(
+        repository,
+        reference,
+        template,
+        target,
+        metadata=None if keep_tokens else metadata,
+        protect=True,
+    )
+
+
+def validate_apply_target(target: Path | str) -> None:
+    """Validate that a target repository can safely accept template changes."""
+    _validated_apply_target_root(Path(target))
+
+
+def required_metadata(
+    repository: str, reference: str, template: str
+) -> tuple[str, ...]:
+    _validate_template_name(template)
+    with _fetched_template(repository, reference, template) as fetched:
+        return fetched[2].required_metadata(template)
+
+
+def _validate_metadata_for_template(
+    repository: str,
+    reference: str,
+    template: str,
+    metadata: dict[str, str],
+) -> None:
+    with _fetched_template(repository, reference, template) as fetched:
+        _, _, repository_reader = fetched
+        try:
+            build_token_values(metadata, repository_reader.instantiation_spec(template))
+        except (TemplateError, InstantiationError) as error:
+            raise ApplicationError(f"cannot instantiate {template!r}: {error}") from error
 
 
 def _apply_template(
@@ -99,51 +146,12 @@ def _apply_template(
     metadata: dict[str, str] | None,
     protect: bool,
 ) -> ApplyResult:
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", template):
-        raise ApplicationError(f"invalid template name: {template!r}")
-
-    target_root = _target_root(Path(target))
-    _require_clean_repository(target_root)
-    _require_idle_repository(target_root)
+    target_root = _validated_apply_target_root(Path(target))
 
     with tempfile.TemporaryDirectory(prefix="apply-template-") as temporary:
-        source = Path(temporary) / "source"
-        _run(["git", "init", "--quiet", str(source)])
-        _run(["git", "remote", "add", "origin", repository], cwd=source)
-        _run(["git", "sparse-checkout", "init", "--cone"], cwd=source)
-        _run(
-            [
-                "git",
-                "sparse-checkout",
-                "set",
-                "tools/template-tool",
-                "scripts",
-                f"templates/{template}",
-            ],
-            cwd=source,
+        source, commit, policy = _fetch_template(
+            repository, reference, template, Path(temporary)
         )
-        _run(
-            [
-                "git",
-                "fetch",
-                "--quiet",
-                "--no-tags",
-                "--depth=1",
-                "--filter=blob:none",
-                "origin",
-                reference,
-            ],
-            cwd=source,
-        )
-        commit = _output(["git", "rev-parse", "FETCH_HEAD^{commit}"], cwd=source)
-        _run(["git", "checkout", "--quiet", "--detach", commit], cwd=source)
-
-        policy, templates = _load_apply_config(source / "templates.toml")
-        if template not in templates:
-            choices = ", ".join(templates)
-            raise ApplicationError(
-                f"unknown template {template!r} at {commit}; expected one of: {choices}"
-            )
 
         temporary_commit, skipped = _filtered_template_commit(
             source,
@@ -153,6 +161,7 @@ def _apply_template(
             Path(temporary),
             metadata,
         )
+
         _run(
             ["git", "fetch", "--quiet", "--no-tags", str(source), temporary_commit],
             cwd=target_root,
@@ -200,6 +209,51 @@ def _apply_template(
         )
 
 
+@contextmanager
+def _fetched_template(
+    repository: str, reference: str, template: str
+) -> Iterator[tuple[Path, str, TemplateRepository]]:
+    with tempfile.TemporaryDirectory(prefix="template-contract-") as temporary:
+        source, commit, _ = _fetch_template(
+            repository, reference, template, Path(temporary)
+        )
+        repository_reader = TemplateRepository(source)
+        yield source, commit, repository_reader
+
+
+def _fetch_template(
+    repository: str, reference: str, template: str, temporary: Path
+) -> tuple[Path, str, ApplyPolicy]:
+    source = temporary / "source"
+    _run(["git", "init", "--quiet", str(source)])
+    _run(["git", "remote", "add", "origin", repository], cwd=source)
+    _run(["git", "sparse-checkout", "init", "--cone"], cwd=source)
+    _run(
+        [
+            "git", "sparse-checkout", "set", "tools/template-tool", "scripts", "templates.toml", f"templates/{template}"
+        ],
+        cwd=source,
+    )
+    _run(
+        ["git", "fetch", "--quiet", "--no-tags", "--depth=1", "--filter=blob:none", "origin", reference],
+        cwd=source,
+    )
+    commit = _output(["git", "rev-parse", "FETCH_HEAD^{commit}"], cwd=source)
+    _run(["git", "checkout", "--quiet", "--detach", commit], cwd=source)
+    policy, templates = _load_apply_config(source / "templates.toml")
+    if template not in templates:
+        choices = ", ".join(templates)
+        raise ApplicationError(
+            f"unknown template {template!r} at {commit}; expected one of: {choices}"
+        )
+    return source, commit, policy
+
+
+def _validate_template_name(template: str) -> None:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", template):
+        raise ApplicationError(f"invalid template name: {template!r}")
+
+
 def _target_root(target: Path) -> Path:
     if not target.is_dir():
         raise ApplicationError(f"target directory does not exist: {target}")
@@ -211,6 +265,13 @@ def _target_root(target: Path) -> Path:
             f"target must be an existing Git repository with at least one commit: {target}"
         ) from error
     return Path(root).resolve()
+
+
+def _validated_apply_target_root(target: Path) -> Path:
+    target_root = _target_root(target)
+    _require_clean_repository(target_root)
+    _require_idle_repository(target_root)
+    return target_root
 
 
 def _unborn_target_root(target: Path) -> Path:

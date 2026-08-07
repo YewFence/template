@@ -1,5 +1,5 @@
 [package]
-name = "rust-template"
+name = "{{CARGO_PACKAGE}}"
 version = "0.1.0"
 description = "An opinionated Rust project template."
 edition = "2024"

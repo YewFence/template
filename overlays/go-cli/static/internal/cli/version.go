@@ -11,7 +11,7 @@ func newVersionCommand(version string) *cobra.Command {
 		Use:   "version",
 		Short: "Print version information",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "your-cli %s\n", version)
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "{{BINARY_NAME}} %s\n", version)
 			return err
 		},
 	}

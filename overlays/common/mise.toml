@@ -1,10 +1,20 @@
-[tasks."locks:update"]
-description = "Update generated dependency state for a staging template"
+[tasks.check]
+description = "Validate an unbootstrapped common template in disposable staging"
 usage = '''
-flag "--bump" help="Re-resolve fuzzy mise tool versions"
 arg "<template_root>" help="Staging template root"
 '''
 run = '''
-mise -C "{{ usage.template_root }}" -E ci lock{% if usage.bump %} --bump{% endif %}
-mise -C "{{ usage.template_root }}/docs" exec -- pnpm install --lockfile-only
+if git -C "{{ usage.template_root }}" grep -nE '(README\.template\.md|AGENTS\.template\.md)' -- .; then
+  echo "legacy common template identity files remain in staging" >&2
+  exit 1
+fi
+unset MISE_LOCKED
+mise -C "{{ usage.template_root }}" -E ci lock
+export MISE_LOCKED=1
+mise -C "{{ usage.template_root }}" install --locked
+mise -C "{{ usage.template_root }}" run deps:update
+mise -C "{{ usage.template_root }}" run docs:lock
+mise -C "{{ usage.template_root }}" run actions:update
+git -C "{{ usage.template_root }}" add --all
+mise -C "{{ usage.template_root }}" run check
 '''

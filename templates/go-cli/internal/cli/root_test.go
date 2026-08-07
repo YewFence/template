@@ -16,7 +16,7 @@ func TestRootCommand(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if got := buffer.String(); got != "Hello from your-cli\n" {
+	if got := buffer.String(); got != "Hello from {{BINARY_NAME}}\n" {
 		t.Fatalf("output = %q, want greeting", got)
 	}
 }
@@ -31,7 +31,7 @@ func TestRootCommandCompletion(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if got := buffer.String(); !strings.Contains(got, "# bash completion V2 for your-cli") {
+	if got := buffer.String(); !strings.Contains(got, "# bash completion V2 for {{BINARY_NAME}}") {
 		t.Fatalf("completion output missing CLI name:\n%s", got)
 	}
 }
@@ -46,7 +46,7 @@ func TestVersionCommand(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if got := buffer.String(); got != "your-cli test\n" {
+	if got := buffer.String(); got != "{{BINARY_NAME}} test\n" {
 		t.Fatalf("output = %q, want version", got)
 	}
 }

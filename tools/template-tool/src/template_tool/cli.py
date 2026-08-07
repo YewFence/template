@@ -8,13 +8,18 @@ import sys
 import tempfile
 from pathlib import Path
 
+import questionary
+
 from .application import (
     DEFAULT_REPOSITORY,
     ApplicationError,
     ApplyResult,
     apply_template,
     initialize_project,
+    required_metadata,
+    validate_apply_target,
 )
+from .instantiation import InstantiationError, validate_metadata_value
 from .repository import TemplateError, TemplateRepository
 
 
@@ -185,13 +190,30 @@ def _apply_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
     parser.add_argument("--ref", required=True, help="Git ref to fetch")
     parser.add_argument("--template", required=True, help="template name")
+    _metadata_arguments(parser)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--interactive", action="store_true")
+    mode.add_argument("--keep-tokens", action="store_true")
     return parser
 
 
 def apply_main(argv: list[str] | None = None) -> None:
     args = _apply_parser().parse_args(argv)
+    metadata = _metadata_from_args(args)
     try:
-        result = apply_template(args.repo, args.ref, args.template, args.target)
+        if args.keep_tokens and metadata:
+            raise ApplicationError("--keep-tokens cannot be combined with metadata")
+        validate_apply_target(args.target)
+        if args.interactive:
+            metadata = _collect_metadata(args.repo, args.ref, args.template, metadata)
+        result = apply_template(
+            args.repo,
+            args.ref,
+            args.template,
+            args.target,
+            metadata=None if args.keep_tokens else metadata,
+            keep_tokens=args.keep_tokens,
+        )
     except ApplicationError as error:
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(1) from error
@@ -211,9 +233,22 @@ def _init_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
     parser.add_argument("--ref", required=True, help="Git ref to fetch")
     parser.add_argument("--template", required=True, help="template name")
-    for option in ("project-name", "description", "github-owner", "repo-name", "go-module", "cargo-package", "binary-name"):
-        parser.add_argument(f"--{option}")
+    _metadata_arguments(parser)
+    parser.add_argument("--interactive", action="store_true")
     return parser
+
+
+def _metadata_arguments(parser: argparse.ArgumentParser) -> None:
+    for option in (
+        "project-name",
+        "description",
+        "github-owner",
+        "repo-name",
+        "go-module",
+        "cargo-package",
+        "binary-name",
+    ):
+        parser.add_argument(f"--{option}")
 
 
 def _metadata_from_args(args: argparse.Namespace) -> dict[str, str]:
@@ -232,10 +267,44 @@ def _metadata_from_args(args: argparse.Namespace) -> dict[str, str]:
     }
 
 
+def _collect_metadata(
+    repository: str,
+    reference: str,
+    template: str,
+    provided: dict[str, str],
+) -> dict[str, str]:
+    required = required_metadata(repository, reference, template)
+    missing = [field for field in required if field not in provided]
+    metadata = dict(provided)
+    try:
+        for field in missing:
+            while True:
+                value = questionary.text(field.replace("_", " ").title()).ask()
+                if value is None:
+                    raise ApplicationError("interactive metadata collection cancelled")
+                try:
+                    validate_metadata_value(field, value)
+                except InstantiationError as error:
+                    print(f"error: {error}", file=sys.stderr)
+                    continue
+                metadata[field] = value
+                break
+        summary = "\n".join(f"{field}: {metadata[field]}" for field in required)
+        confirmed = questionary.confirm(f"Confirm metadata?\n{summary}", default=True).ask()
+        if confirmed is not True:
+            raise ApplicationError("interactive metadata collection cancelled")
+    except (KeyboardInterrupt, EOFError):
+        raise ApplicationError("interactive metadata collection cancelled") from None
+    return metadata
+
+
 def init_main(argv: list[str] | None = None) -> None:
     args = _init_parser().parse_args(argv)
+    metadata = _metadata_from_args(args)
     try:
-        result = initialize_project(args.repo, args.ref, args.template, args.target, _metadata_from_args(args))
+        if args.interactive:
+            metadata = _collect_metadata(args.repo, args.ref, args.template, metadata)
+        result = initialize_project(args.repo, args.ref, args.template, args.target, metadata)
     except ApplicationError as error:
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(1) from error
@@ -290,16 +359,29 @@ def main(argv: list[str] | None = None) -> None:
     apply_parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
     apply_parser.add_argument("--ref", required=True)
     apply_parser.add_argument("--template", required=True)
+    _metadata_arguments(apply_parser)
+    apply_mode = apply_parser.add_mutually_exclusive_group()
+    apply_mode.add_argument("--interactive", action="store_true")
+    apply_mode.add_argument("--keep-tokens", action="store_true")
     init_parser = subparsers.add_parser("init")
     init_parser.add_argument("target", nargs="?", type=Path, default=Path.cwd())
     init_parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
     init_parser.add_argument("--ref", required=True)
     init_parser.add_argument("--template", required=True)
-    for option in ("project-name", "description", "github-owner", "repo-name", "go-module", "cargo-package", "binary-name"):
-        init_parser.add_argument(f"--{option}")
+    _metadata_arguments(init_parser)
+    init_parser.add_argument("--interactive", action="store_true")
     args = parser.parse_args(argv)
     if args.command == "apply":
-        apply_main([str(args.target), "--repo", args.repo, "--ref", args.ref, "--template", args.template])
+        forwarded = [str(args.target), "--repo", args.repo, "--ref", args.ref, "--template", args.template]
+        for option in ("project-name", "description", "github-owner", "repo-name", "go-module", "cargo-package", "binary-name"):
+            value = getattr(args, option.replace("-", "_"))
+            if value is not None:
+                forwarded.extend([f"--{option}", value])
+        if args.interactive:
+            forwarded.append("--interactive")
+        if args.keep_tokens:
+            forwarded.append("--keep-tokens")
+        apply_main(forwarded)
         return
     if args.command == "init":
         forwarded = [str(args.target), "--repo", args.repo, "--ref", args.ref, "--template", args.template]
@@ -307,6 +389,8 @@ def main(argv: list[str] | None = None) -> None:
             value = getattr(args, option.replace("-", "_"))
             if value is not None:
                 forwarded.extend([f"--{option}", value])
+        if args.interactive:
+            forwarded.append("--interactive")
         init_main(forwarded)
         return
     forwarded = []

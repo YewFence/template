@@ -3,7 +3,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   base: '/{{REPO_NAME}}/',
   lang: 'en-US',
-  title: '{{PROJECT_NAME}}',
+  title: {{PROJECT_NAME_JSON}},
   description: '{{PROJECT_DESCRIPTION}}',
 
   themeConfig: {

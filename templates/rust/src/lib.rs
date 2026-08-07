@@ -12,6 +12,6 @@ mod tests {
 
     #[test]
     fn builds_project_greeting() {
-        assert_eq!(greeting("rust-template"), "Hello from rust-template!");
+        assert_eq!(greeting("{{CARGO_PACKAGE}}"), "Hello from {{CARGO_PACKAGE}}!");
     }
 }

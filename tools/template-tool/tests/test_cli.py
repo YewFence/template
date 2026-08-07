@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from template_tool import TemplateRepository
-from template_tool.cli import _run_template_project_check
+from template_tool.cli import ApplicationError, _collect_metadata, _metadata_from_args, _run_template_project_check
 
 
 class TemplateCheckTest(unittest.TestCase):
@@ -58,6 +58,56 @@ class TemplateCheckTest(unittest.TestCase):
                 _run_template_project_check(repository, "example")
 
             self.assertFalse((root / "templates/example/.git").exists())
+
+    def test_metadata_from_args_preserves_only_supplied_values(self) -> None:
+        args = type(
+            "Args",
+            (),
+            {
+                "project_name": "Example",
+                "description": None,
+                "github_owner": "YewFence",
+                "repo_name": None,
+                "go_module": None,
+                "cargo_package": None,
+                "binary_name": None,
+            },
+        )()
+
+        self.assertEqual(
+            _metadata_from_args(args),
+            {"project_name": "Example", "github_owner": "YewFence"},
+        )
+
+    @mock.patch("template_tool.cli.questionary.confirm")
+    @mock.patch("template_tool.cli.questionary.text")
+    @mock.patch("template_tool.cli.required_metadata", return_value=("project_name",))
+    def test_interactive_metadata_retries_invalid_value(
+        self, required: mock.Mock, text: mock.Mock, confirm: mock.Mock
+    ) -> None:
+        text.side_effect = [
+            mock.Mock(ask=mock.Mock(return_value=" bad ")),
+            mock.Mock(ask=mock.Mock(return_value="Good")),
+        ]
+        confirm.return_value.ask.return_value = True
+
+        metadata = _collect_metadata("repo", "ref", "example", {})
+
+        self.assertEqual(metadata, {"project_name": "Good"})
+        self.assertEqual(text.call_count, 2)
+        confirm.return_value.ask.assert_called_once()
+
+    @mock.patch("template_tool.cli.questionary.confirm")
+    @mock.patch("template_tool.cli.questionary.text")
+    @mock.patch("template_tool.cli.required_metadata", return_value=("project_name",))
+    def test_interactive_metadata_cancel_does_not_return_values(
+        self, required: mock.Mock, text: mock.Mock, confirm: mock.Mock
+    ) -> None:
+        text.return_value.ask.return_value = "Good"
+        confirm.return_value.ask.return_value = False
+
+        with self.assertRaisesRegex(ApplicationError, "cancelled"):
+            _collect_metadata("repo", "ref", "example", {})
 
 
 if __name__ == "__main__":

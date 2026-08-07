@@ -47,14 +47,18 @@ def validate_metadata(metadata: dict[str, str], spec: InstantiationSpec) -> None
         names = ", ".join(sorted(missing))
         raise InstantiationError(f"missing required metadata: {names}")
     for field, value in metadata.items():
-        if not isinstance(value, str) or not value:
-            raise InstantiationError(f"metadata field {field!r} must be a non-empty string")
-        if "\x00" in value or CONTROL_PATTERN.search(value):
-            raise InstantiationError(f"metadata field {field!r} contains an ASCII control character")
-        if value != value.strip():
-            raise InstantiationError(f"metadata field {field!r} must not have leading or trailing whitespace")
-        if "\n" in value or "\r" in value:
-            raise InstantiationError(f"metadata field {field!r} must be a single line")
+        validate_metadata_value(field, value)
+
+
+def validate_metadata_value(field: str, value: str) -> None:
+    if not isinstance(value, str) or not value:
+        raise InstantiationError(f"metadata field {field!r} must be a non-empty string")
+    if "\x00" in value or CONTROL_PATTERN.search(value):
+        raise InstantiationError(f"metadata field {field!r} contains an ASCII control character")
+    if value != value.strip():
+        raise InstantiationError(f"metadata field {field!r} must not have leading or trailing whitespace")
+    if "\n" in value or "\r" in value:
+        raise InstantiationError(f"metadata field {field!r} must be a single line")
 
 
 def build_token_values(metadata: dict[str, str], spec: InstantiationSpec) -> dict[str, str]:

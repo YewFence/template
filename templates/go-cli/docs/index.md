@@ -2,8 +2,8 @@
 layout: home
 
 hero:
-  name: '{{PROJECT_NAME}}'
-  text: '{{PROJECT_DESCRIPTION}}'
+  name: {{PROJECT_NAME_JSON}}
+  text: {{PROJECT_DESCRIPTION_JSON}}
   tagline: 'A lightweight, release-ready Go CLI.'
   actions:
     - theme: brand

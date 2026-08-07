@@ -5,7 +5,7 @@ set -euo pipefail
 : "${RELEASE_PLATFORM:?RELEASE_PLATFORM is required}"
 : "${RELEASE_TAG:?RELEASE_TAG is required}"
 
-binary_name="${RELEASE_BINARY:-rust-template}"
+binary_name="${RELEASE_BINARY:-{{BINARY_NAME}}}"
 output_dir="${RELEASE_OUTPUT_DIR:-dist}"
 binary_suffix=""
 
