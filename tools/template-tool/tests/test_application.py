@@ -54,10 +54,11 @@ class ApplyTemplateTest(unittest.TestCase):
         (self.source / "tools/template-tool/README").write_text("tool\n")
         (self.source / "scripts/apply-template").write_text("launcher\n")
         (self.source / "templates.toml").write_text(
-            "version = 1\n"
+            "version = 2\n"
             "[apply]\n"
             'protected = [".gitignore", "AGENTS.*", "LICENSE*"]\n'
             'hints = ["Review protected files manually."]\n'
+            "[templates.example.capabilities]\n"
             "[templates.example.instantiation]\n"
             'required = ["project_name", "binary_name"]\n'
             "[templates.example.instantiation.tokens]\n"
@@ -175,6 +176,25 @@ class ApplyTemplateTest(unittest.TestCase):
                 metadata={},
                 keep_tokens=False,
             )
+
+    def test_apply_keep_tokens_rejects_invalid_capability_contract(self) -> None:
+        config = (self.source / "templates.toml").read_text()
+        (self.source / "templates.toml").write_text(
+            config.replace(
+                "[templates.example.capabilities]\n",
+                "[templates.example.capabilities]\nDocs-Site = true\n",
+            )
+        )
+        self._git(self.source, "add", "templates.toml")
+        self._git(self.source, "commit", "--quiet", "-m", "invalid capability")
+        self._init_target()
+
+        with self.assertRaisesRegex(ApplicationError, "invalid capability name"):
+            apply_template(
+                str(self.source), "main", "example", self.target, keep_tokens=True
+            )
+
+        self.assertFalse(self._git(self.target, "status", "--porcelain", capture=True))
 
     def test_conflict_preserves_index_can_be_cancelled_and_resolved(self) -> None:
         (self.source / "templates/example/README.md").write_text("template\n")

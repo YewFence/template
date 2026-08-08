@@ -37,6 +37,8 @@ jobs:
       - name: Check
         run: mise run check
 
+<$ slot("crates_io_package_check", optional=true) $>
+
   actions-version:
     name: Check Action Versions
     runs-on: ubuntu-latest

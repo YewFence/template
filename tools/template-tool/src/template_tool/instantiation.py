@@ -12,6 +12,8 @@ from pathlib import Path, PurePosixPath
 TOKEN_PATTERN = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
 CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 UPPERCASE_TOKEN_PATTERN = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
+GITHUB_OWNER_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?")
+GITHUB_REPOSITORY_PATTERN = re.compile(r"[A-Za-z0-9._-]+")
 SUPPORTED_METADATA_FIELDS = frozenset(
     {
         "project_name",
@@ -59,6 +61,14 @@ def validate_metadata_value(field: str, value: str) -> None:
         raise InstantiationError(f"metadata field {field!r} must not have leading or trailing whitespace")
     if "\n" in value or "\r" in value:
         raise InstantiationError(f"metadata field {field!r} must be a single line")
+    if field == "github_owner" and not GITHUB_OWNER_PATTERN.fullmatch(value):
+        raise InstantiationError(
+            "metadata field 'github_owner' must be a valid GitHub owner name"
+        )
+    if field == "repo_name" and not GITHUB_REPOSITORY_PATTERN.fullmatch(value):
+        raise InstantiationError(
+            "metadata field 'repo_name' must be a valid GitHub repository name"
+        )
 
 
 def build_token_values(metadata: dict[str, str], spec: InstantiationSpec) -> dict[str, str]:
@@ -69,6 +79,8 @@ def build_token_values(metadata: dict[str, str], spec: InstantiationSpec) -> dic
         if transform == "hyphen-to-underscore":
             values[token] = value.replace("-", "_")
         elif transform == "json-string":
+            values[token] = json.dumps(value, ensure_ascii=False)
+        elif transform == "toml-basic-string":
             values[token] = json.dumps(value, ensure_ascii=False)
         else:
             raise InstantiationError(f"unsupported derived transform: {transform}")

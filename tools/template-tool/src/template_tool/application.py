@@ -5,7 +5,6 @@ import os
 import re
 import subprocess
 import tempfile
-import tomllib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -13,6 +12,7 @@ from pathlib import Path
 
 from .instantiation import InstantiationError, build_token_values
 from .repository import TemplateError, TemplateRepository
+from .configuration import ConfigurationError, load_template_config
 
 
 class ApplicationError(RuntimeError):
@@ -241,11 +241,16 @@ def _fetch_template(
     commit = _output(["git", "rev-parse", "FETCH_HEAD^{commit}"], cwd=source)
     _run(["git", "checkout", "--quiet", "--detach", commit], cwd=source)
     policy, templates = _load_apply_config(source / "templates.toml")
+    try:
+        repository_reader = TemplateRepository(source)
+    except TemplateError as error:
+        raise ApplicationError(f"invalid fetched templates.toml: {error}") from error
     if template not in templates:
         choices = ", ".join(templates)
         raise ApplicationError(
             f"unknown template {template!r} at {commit}; expected one of: {choices}"
         )
+    repository_reader.select(template)
     return source, commit, policy
 
 
@@ -329,10 +334,9 @@ def _git_path(repository: Path, marker: str) -> Path:
 
 def _load_apply_config(path: Path) -> tuple[ApplyPolicy, tuple[str, ...]]:
     try:
-        with path.open("rb") as config_file:
-            config = tomllib.load(config_file)
-    except (OSError, tomllib.TOMLDecodeError) as error:
-        raise ApplicationError(f"cannot load fetched templates.toml: {error}") from error
+        config = load_template_config(path)
+    except ConfigurationError as error:
+        raise ApplicationError(f"invalid fetched templates.toml: {error}") from error
 
     raw_templates = config.get("templates")
     if not isinstance(raw_templates, dict) or not raw_templates:

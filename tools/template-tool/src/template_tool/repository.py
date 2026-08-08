@@ -9,7 +9,6 @@ import shutil
 import stat
 import subprocess
 import tempfile
-import tomllib
 import uuid
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -17,6 +16,12 @@ from typing import Literal
 
 from jinja2 import Environment, StrictUndefined, nodes
 
+from .capabilities import (
+    CapabilityError,
+    resolve_capabilities,
+    validate_capabilities,
+)
+from .configuration import ConfigurationError, load_template_config
 from .instantiation import (
     InstantiationError,
     InstantiationSpec,
@@ -39,9 +44,23 @@ class TemplateError(RuntimeError):
 @dataclass(frozen=True)
 class TemplateProfile:
     name: str
+    capabilities: dict[str, bool]
+    capability_outputs: dict[str, tuple[tuple[PurePosixPath, bool], ...]]
     path_rules: dict[PurePosixPath, PathRule]
-    slots: dict[PurePosixPath, dict[str, tuple[str, ...]]]
+    slots: dict[PurePosixPath, dict[str, SlotBinding]]
     instantiation: InstantiationSpec
+
+
+@dataclass(frozen=True)
+class SlotBinding:
+    capability: str | None
+    fragments: tuple[str, ...]
+    default_fragments: tuple[str, ...] | None = None
+
+    def select(self, enabled_capabilities: frozenset[str]) -> tuple[str, ...]:
+        if self.capability is None or self.capability in enabled_capabilities:
+            return self.fragments
+        return self.default_fragments or ()
 
 
 @dataclass(frozen=True)
@@ -107,7 +126,8 @@ class TemplateRepository:
 
     def render(self, template: str) -> RenderResult:
         profile = self._profile(template)
-        staged = self._build_staged_tree(profile)
+        capabilities = self.resolve_capabilities(template)
+        staged = self._build_staged_tree(profile, frozenset(capabilities))
         target = self.templates_root / template
         try:
             self._replace_tree(staged, target)
@@ -115,6 +135,44 @@ class TemplateRepository:
             self._remove_path(staged)
             raise
         return RenderResult(template)
+
+    def render_to(
+        self,
+        template: str,
+        destination: Path | str,
+        *,
+        enabled_capabilities: tuple[str, ...] | None = None,
+    ) -> RenderResult:
+        profile = self._profile(template)
+        if enabled_capabilities is None:
+            effective = self.resolve_capabilities(template)
+        else:
+            requested = set(enabled_capabilities)
+            effective = self.resolve_capabilities(
+                template,
+                enable=enabled_capabilities,
+                disable=tuple(set(profile.capabilities) - requested),
+            )
+        target = Path(destination).resolve()
+        self._validate_render_destination(target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        staged = self._build_staged_tree(
+            profile, frozenset(effective), staging_parent=target.parent
+        )
+        try:
+            self._replace_tree(staged, target)
+        except Exception:
+            self._remove_path(staged)
+            raise
+        return RenderResult(template)
+
+    def _validate_render_destination(self, destination: Path) -> None:
+        if destination.is_relative_to(self.root) or self.root.is_relative_to(
+            destination
+        ):
+            raise TemplateError(
+                "render destination must be outside repository-owned paths"
+            )
 
     def render_repository(self) -> RenderResult:
         rendered = self._render_renovate_config(
@@ -155,7 +213,8 @@ class TemplateRepository:
 
     def check(self, template: str) -> RenderResult:
         profile = self._profile(template)
-        staged = self._build_staged_tree(profile)
+        capabilities = self.resolve_capabilities(template)
+        staged = self._build_staged_tree(profile, frozenset(capabilities))
         target = self.templates_root / template
         try:
             differences = tuple(self._compare_trees(staged, target))
@@ -165,6 +224,25 @@ class TemplateRepository:
 
     def validation_metadata(self, template: str) -> dict[str, str]:
         return dict(self._profile(template).instantiation.validation_metadata)
+
+    def capabilities(self, template: str) -> tuple[tuple[str, bool], ...]:
+        return tuple(sorted(self._profile(template).capabilities.items()))
+
+    def resolve_capabilities(
+        self,
+        template: str,
+        *,
+        enable: tuple[str, ...] = (),
+        disable: tuple[str, ...] = (),
+    ) -> tuple[str, ...]:
+        try:
+            return resolve_capabilities(
+                self._profile(template).capabilities,
+                enable=enable,
+                disable=disable,
+            )
+        except CapabilityError as error:
+            raise TemplateError(str(error)) from error
 
     def required_metadata(self, template: str) -> tuple[str, ...]:
         return self._profile(template).instantiation.required
@@ -191,11 +269,10 @@ class TemplateRepository:
         if not self.config_path.is_file():
             raise TemplateError(f"missing configuration: {self.config_path}")
 
-        with self.config_path.open("rb") as config_file:
-            config = tomllib.load(config_file)
-
-        if config.get("version") != 1:
-            raise TemplateError("templates.toml must declare version = 1")
+        try:
+            config = load_template_config(self.config_path)
+        except ConfigurationError as error:
+            raise TemplateError(str(error)) from error
 
         raw_templates = config.get("templates")
         if not isinstance(raw_templates, dict) or not raw_templates:
@@ -207,6 +284,56 @@ class TemplateRepository:
                 raise TemplateError("template names must be non-empty strings")
             if not isinstance(raw_profile, dict):
                 raise TemplateError(f"templates.{name} must be a table")
+
+            unknown_keys = set(raw_profile) - {
+                "capabilities",
+                "capability_outputs",
+                "paths",
+                "slots",
+                "instantiation",
+            }
+            if unknown_keys:
+                keys = ", ".join(sorted(unknown_keys))
+                raise TemplateError(f"unknown keys in templates.{name}: {keys}")
+
+            try:
+                capabilities = validate_capabilities(
+                    raw_profile.get("capabilities"), name
+                )
+            except CapabilityError as error:
+                raise TemplateError(str(error)) from error
+
+            raw_capability_outputs = raw_profile.get("capability_outputs", {})
+            if not isinstance(raw_capability_outputs, dict):
+                raise TemplateError(
+                    f"templates.{name}.capability_outputs must be a table"
+                )
+            capability_outputs: dict[
+                str, tuple[tuple[PurePosixPath, bool], ...]
+            ] = {}
+            for capability, raw_selectors in raw_capability_outputs.items():
+                if capability not in capabilities:
+                    raise TemplateError(
+                        f"templates.{name}.capability_outputs references undeclared capability: {capability}"
+                    )
+                if not isinstance(raw_selectors, list) or not raw_selectors:
+                    raise TemplateError(
+                        f"templates.{name}.capability_outputs.{capability} must be a non-empty array of strings"
+                    )
+                selectors: list[tuple[PurePosixPath, bool]] = []
+                for raw_selector in raw_selectors:
+                    if not isinstance(raw_selector, str) or not raw_selector:
+                        raise TemplateError(
+                            f"templates.{name}.capability_outputs.{capability} must be a non-empty array of strings"
+                        )
+                    if any(character in raw_selector for character in "*?["):
+                        raise TemplateError(
+                            f"templates.{name}.capability_outputs.{capability} must not use glob syntax: {raw_selector!r}"
+                        )
+                    is_prefix = raw_selector.endswith("/")
+                    selector = self._validate_output_path(raw_selector.rstrip("/"))
+                    selectors.append((selector, is_prefix))
+                capability_outputs[capability] = tuple(selectors)
 
             raw_paths = raw_profile.get("paths", {})
             if not isinstance(raw_paths, dict):
@@ -223,24 +350,20 @@ class TemplateRepository:
             raw_slots = raw_profile.get("slots", {})
             if not isinstance(raw_slots, dict):
                 raise TemplateError(f"templates.{name}.slots must be a table")
-            slots: dict[PurePosixPath, dict[str, tuple[str, ...]]] = {}
+            slots: dict[PurePosixPath, dict[str, SlotBinding]] = {}
             for raw_path, raw_bindings in raw_slots.items():
                 output_path = self._validate_output_path(raw_path)
                 if not isinstance(raw_bindings, dict):
                     raise TemplateError(
                         f"templates.{name}.slots.{raw_path} must be a table"
                     )
-                bindings: dict[str, tuple[str, ...]] = {}
-                for slot_name, raw_fragments in raw_bindings.items():
+                bindings: dict[str, SlotBinding] = {}
+                for slot_name, raw_binding in raw_bindings.items():
                     if not isinstance(slot_name, str) or not slot_name:
                         raise TemplateError(f"invalid slot name for {name}:{raw_path}")
-                    if not isinstance(raw_fragments, list) or not all(
-                        isinstance(fragment, str) for fragment in raw_fragments
-                    ):
-                        raise TemplateError(
-                            f"binding {name}:{raw_path}:{slot_name} must be an array of strings"
-                        )
-                    bindings[slot_name] = tuple(raw_fragments)
+                    bindings[slot_name] = self._load_slot_binding(
+                        name, raw_path, slot_name, raw_binding, capabilities
+                    )
                 slots[output_path] = bindings
 
             raw_instantiation = raw_profile.get("instantiation")
@@ -299,12 +422,9 @@ class TemplateRepository:
             except InstantiationError as error:
                 raise TemplateError(f"invalid validation metadata for {name}: {error}") from error
 
-            unknown_keys = set(raw_profile) - {"paths", "slots", "instantiation"}
-            if unknown_keys:
-                keys = ", ".join(sorted(unknown_keys))
-                raise TemplateError(f"unknown keys in templates.{name}: {keys}")
-
-            profiles[name] = TemplateProfile(name, path_rules, slots, spec)
+            profiles[name] = TemplateProfile(
+                name, capabilities, capability_outputs, path_rules, slots, spec
+            )
 
         return profiles
 
@@ -319,38 +439,118 @@ class TemplateRepository:
             raise TemplateError(f"output path escapes the template root: {raw_path!r}")
         return path
 
-    def _build_staged_tree(self, profile: TemplateProfile) -> Path:
+    @staticmethod
+    def _load_slot_binding(
+        template: str,
+        output_path: str,
+        slot_name: str,
+        raw_binding: object,
+        capabilities: dict[str, bool],
+    ) -> SlotBinding:
+        label = f"binding {template}:{output_path}:{slot_name}"
+        if isinstance(raw_binding, list):
+            if not all(isinstance(fragment, str) for fragment in raw_binding):
+                raise TemplateError(f"{label} must be an array of strings")
+            return SlotBinding(None, tuple(raw_binding))
+        if not isinstance(raw_binding, dict):
+            raise TemplateError(f"{label} must be an array or table")
+
+        unknown = set(raw_binding) - {
+            "capability",
+            "fragments",
+            "default_fragments",
+        }
+        if unknown:
+            names = ", ".join(sorted(unknown))
+            raise TemplateError(f"{label} contains unknown keys: {names}")
+        capability = raw_binding.get("capability")
+        if not isinstance(capability, str) or capability not in capabilities:
+            raise TemplateError(f"{label} references undeclared capability: {capability}")
+        fragments = raw_binding.get("fragments")
+        if not isinstance(fragments, list) or not fragments or not all(
+            isinstance(fragment, str) for fragment in fragments
+        ):
+            raise TemplateError(f"{label}.fragments must be a non-empty array of strings")
+        raw_default = raw_binding.get("default_fragments")
+        if "default_fragments" in raw_binding and (
+            not isinstance(raw_default, list)
+            or not raw_default
+            or not all(isinstance(fragment, str) for fragment in raw_default)
+        ):
+            raise TemplateError(
+                f"{label}.default_fragments must be a non-empty array of strings"
+            )
+        default_fragments = (
+            tuple(raw_default) if isinstance(raw_default, list) else None
+        )
+        return SlotBinding(capability, tuple(fragments), default_fragments)
+
+    def _build_staged_tree(
+        self,
+        profile: TemplateProfile,
+        enabled_capabilities: frozenset[str],
+        *,
+        staging_parent: Path | None = None,
+    ) -> Path:
         overlay_root = self.overlays_root / profile.name
         if not overlay_root.is_dir():
             raise TemplateError(f"missing overlay for template {profile.name!r}")
 
-        self.templates_root.mkdir(parents=True, exist_ok=True)
+        staging_root = staging_parent or self.templates_root
+        staging_root.mkdir(parents=True, exist_ok=True)
         staged = Path(
             tempfile.mkdtemp(
-                prefix=f".render-{profile.name}-", dir=self.templates_root
+                prefix=f".render-{profile.name}-", dir=staging_root
             )
         )
         staged.chmod(0o755)
         try:
             sources = self._select_sources(profile, overlay_root)
             self._validate_output_tree(sources)
-            for output_path in sorted(sources, key=str):
-                self._render_source(
-                    profile,
-                    sources[output_path],
-                    staged / Path(*output_path.parts),
-                    overlay_root,
-                )
-
+            for source in sources.values():
+                if source.kind == "static" and source.source_path.is_symlink():
+                    self._validate_symlink(
+                        source.output_path, os.readlink(source.source_path)
+                    )
             renovate = self._render_renovate_config(
                 overlay_root / "fragments" / "renovate" / "profile.json"
             )
             renovate_path = PurePosixPath("renovate.json")
+            if renovate is not None and renovate_path in sources:
+                raise TemplateError(
+                    f"template {profile.name!r} has a source that conflicts with the Renovate module"
+                )
+            output_paths = set(sources)
             if renovate is not None:
-                if renovate_path in sources:
-                    raise TemplateError(
-                        f"template {profile.name!r} has a source that conflicts with the Renovate module"
+                output_paths.add(renovate_path)
+            self._validate_capability_contract(profile, output_paths)
+            all_capabilities = frozenset(profile.capabilities)
+            for source in sources.values():
+                if source.kind == "layout":
+                    self._render_layout(
+                        profile.name,
+                        source.source_path,
+                        profile.slots.get(source.output_path, {}),
+                        overlay_root,
+                        all_capabilities,
                     )
+            selected_sources = {
+                path: source
+                for path, source in sources.items()
+                if self._output_enabled(profile, path, enabled_capabilities)
+            }
+            for output_path in sorted(selected_sources, key=str):
+                self._render_source(
+                    profile,
+                    selected_sources[output_path],
+                    staged / Path(*output_path.parts),
+                    overlay_root,
+                    enabled_capabilities,
+                )
+
+            if renovate is not None and self._output_enabled(
+                profile, renovate_path, enabled_capabilities
+            ):
                 destination = staged / "renovate.json"
                 destination.write_bytes(renovate)
                 destination.chmod(0o644)
@@ -367,6 +567,64 @@ class TemplateRepository:
         except Exception:
             self._remove_path(staged)
             raise
+
+    @staticmethod
+    def _validate_capability_contract(
+        profile: TemplateProfile, output_paths: set[PurePosixPath]
+    ) -> None:
+        matched_outputs: dict[PurePosixPath, list[tuple[str, PurePosixPath]]] = {}
+        effects = {
+            binding.capability
+            for bindings in profile.slots.values()
+            for binding in bindings.values()
+            if binding.capability is not None
+        }
+        for capability, selectors in profile.capability_outputs.items():
+            effects.add(capability)
+            for selector, is_prefix in selectors:
+                matches = {
+                    output_path
+                    for output_path in output_paths
+                    if (not is_prefix and output_path == selector)
+                    or (is_prefix and selector in output_path.parents)
+                }
+                if not matches:
+                    suffix = "/" if is_prefix else ""
+                    raise TemplateError(
+                        f"capability output selector {selector}{suffix} does not match any output"
+                    )
+                for output_path in matches:
+                    matched_outputs.setdefault(output_path, []).append(
+                        (capability, selector)
+                    )
+        overlapping = {
+            output_path: matches
+            for output_path, matches in matched_outputs.items()
+            if len(matches) > 1
+        }
+        if overlapping:
+            output_path = min(overlapping, key=str)
+            raise TemplateError(
+                f"output {output_path} is matched by multiple capability output selectors"
+            )
+        empty = set(profile.capabilities) - effects
+        if empty:
+            names = ", ".join(sorted(empty))
+            raise TemplateError(f"capability has no delivery effect: {names}")
+
+    @staticmethod
+    def _output_enabled(
+        profile: TemplateProfile,
+        output_path: PurePosixPath,
+        enabled_capabilities: frozenset[str],
+    ) -> bool:
+        for capability, selectors in profile.capability_outputs.items():
+            for selector, is_prefix in selectors:
+                if (not is_prefix and output_path == selector) or (
+                    is_prefix and selector in output_path.parents
+                ):
+                    return capability in enabled_capabilities
+        return True
 
     def _render_renovate_config(self, profile_path: Path) -> bytes | None:
         base_path = self.shared_root / "renovate" / "base.json"
@@ -518,6 +776,7 @@ class TemplateRepository:
         source: Source,
         destination: Path,
         overlay_root: Path,
+        enabled_capabilities: frozenset[str],
     ) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         if source.kind == "static":
@@ -526,7 +785,11 @@ class TemplateRepository:
 
         bindings = profile.slots.get(source.output_path, {})
         rendered = self._render_layout(
-            profile.name, source.source_path, bindings, overlay_root
+            profile.name,
+            source.source_path,
+            bindings,
+            overlay_root,
+            enabled_capabilities,
         )
         destination.write_bytes(rendered.encode("utf-8"))
         self._apply_git_mode(source.source_path, destination)
@@ -559,8 +822,9 @@ class TemplateRepository:
         self,
         template_name: str,
         layout_path: Path,
-        bindings: dict[str, tuple[str, ...]],
+        bindings: dict[str, SlotBinding],
         overlay_root: Path,
+        enabled_capabilities: frozenset[str],
     ) -> str:
         layout_source = layout_path.read_text(encoding="utf-8")
         parsed = self._environment.parse(layout_source)
@@ -579,7 +843,23 @@ class TemplateRepository:
                     f"slot {name!r} optional flag must be boolean in {layout_path}"
                 )
             declared_slots.add(name)
-            fragments = bindings.get(name, ())
+            binding = bindings.get(name)
+            if (
+                binding is not None
+                and binding.capability is not None
+                and binding.default_fragments is None
+                and not optional
+            ):
+                raise TemplateError(
+                    f"capability-owned binding {name!r} in {layout_path} requires an optional slot"
+                )
+            if binding is not None:
+                for branch in (binding.fragments, binding.default_fragments or ()):
+                    for reference in branch:
+                        self._render_fragment(reference, overlay_root)
+            fragments = (
+                binding.select(enabled_capabilities) if binding is not None else ()
+            )
             if not fragments and not optional:
                 raise TemplateError(
                     f"template {template_name!r} does not bind required slot {name!r} in {layout_path}"

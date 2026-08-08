@@ -22,11 +22,6 @@ on:
         required: false
         type: boolean
         default: false
-      prerelease:
-        description: "Whether to mark the GitHub Release as a pre-release"
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -95,7 +90,6 @@ jobs:
         id: release
         env:
           INPUT_TAG: ${{ inputs.tag }}
-          INPUT_PRERELEASE: ${{ inputs.prerelease }}
           REF_NAME: ${{ github.ref_name }}
           MERGE_COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
@@ -109,7 +103,6 @@ jobs:
             tag="${INPUT_TAG}"
             checkout_ref="${INPUT_TAG}"
             should_release="true"
-            prerelease="${INPUT_PRERELEASE}"
           elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             tag="${REF_NAME}"
             checkout_ref="${REF_NAME}"
@@ -126,7 +119,7 @@ jobs:
             exit 1
           fi
 
-          if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" && "${tag}" == *-* ]]; then
+          if [[ "${tag}" == *-* ]]; then
             prerelease="true"
           fi
 
@@ -400,6 +393,8 @@ jobs:
         run: |
           echo "latest tag was not moved"
           echo "| Moved Latest Tag | \`skipped\` |" >> "${GITHUB_STEP_SUMMARY}"
+
+
 
   close-superseded-release-pr:
     name: Close Superseded Release PR

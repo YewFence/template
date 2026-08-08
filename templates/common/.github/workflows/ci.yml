@@ -37,6 +37,8 @@ jobs:
       - name: Check
         run: mise run check
 
+
+
   actions-version:
     name: Check Action Versions
     runs-on: ubuntu-latest

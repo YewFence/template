@@ -4,6 +4,7 @@ import json
 import os
 import stat
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -14,15 +15,19 @@ class TemplateRepositoryTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
+        self.output_directory = tempfile.TemporaryDirectory()
+        self.output_root = Path(self.output_directory.name)
         (self.root / "shared/static").mkdir(parents=True)
         (self.root / "overlays/example/static").mkdir(parents=True)
 
     def tearDown(self) -> None:
+        self.output_directory.cleanup()
         self.temporary_directory.cleanup()
 
     def write_config(self, body: str = "") -> None:
         (self.root / "templates.toml").write_text(
-            "version = 1\n[templates.example]\n"
+            "version = 2\n[templates.example]\n"
+            "[templates.example.capabilities]\n"
             + body
             + "[templates.example.instantiation]\n"
             'required = ["project_name"]\n'
@@ -53,6 +58,43 @@ class TemplateRepositoryTest(unittest.TestCase):
         result = repository.check("example")
         self.assertFalse(result.matches)
         self.assertTrue(any("LICENSE" in difference for difference in result.differences))
+
+    def test_capability_outputs_filter_exact_paths_and_directory_prefixes(self) -> None:
+        self.write_config(
+            "docs-site = true\n"
+            "[templates.example.capability_outputs]\n"
+            'docs-site = ["docs/", "docs.yml"]\n'
+        )
+        (self.root / "shared/static/docs").mkdir()
+        (self.root / "shared/static/docs/index.md").write_text(
+            "documentation\n", encoding="utf-8"
+        )
+        (self.root / "shared/static/docs.yml").write_text(
+            "workflow\n", encoding="utf-8"
+        )
+        (self.root / "shared/static/README.md").write_text(
+            "readme\n", encoding="utf-8"
+        )
+
+        repository = TemplateRepository(self.root)
+        repository.render("example")
+        default_output = self.root / "templates/example"
+        self.assertTrue((default_output / "docs/index.md").is_file())
+        self.assertTrue((default_output / "docs.yml").is_file())
+
+        custom_output = self.output_root / "custom"
+        repository.render_to(
+            "example",
+            custom_output,
+            enabled_capabilities=repository.resolve_capabilities(
+                "example", disable=("docs-site",)
+            ),
+        )
+
+        self.assertEqual((custom_output / "README.md").read_text(), "readme\n")
+        self.assertFalse((custom_output / "docs").exists())
+        self.assertFalse((custom_output / "docs.yml").exists())
+        self.assertTrue((default_output / "docs/index.md").is_file())
 
     def test_check_ignores_only_gitignored_extra_paths(self) -> None:
         self.write_config()
@@ -126,6 +168,321 @@ class TemplateRepositoryTest(unittest.TestCase):
             "expr: ${{ github.ref }}\n- run: mise run check\n",
         )
 
+    def test_conditional_slot_binding_is_omitted_when_capability_is_disabled(self) -> None:
+        (self.root / "shared/layouts").mkdir(parents=True)
+        (self.root / "shared/fragments/tasks").mkdir(parents=True)
+        (self.root / "shared/layouts/ci.yml.j2").write_text(
+            "steps:\n<$ slot(\"package\", optional=true) $>", encoding="utf-8"
+        )
+        (self.root / "shared/fragments/tasks/package.yml.j2").write_text(
+            "- run: package\n", encoding="utf-8"
+        )
+        self.write_config(
+            "release = false\n"
+            '[templates.example.slots."ci.yml"]\n'
+            'package = { capability = "release", '
+            'fragments = ["shared:tasks/package.yml.j2"] }\n'
+        )
+
+        repository = TemplateRepository(self.root)
+        repository.render_to(
+            "example", self.output_root / "disabled", enabled_capabilities=()
+        )
+        repository.render_to(
+            "example",
+            self.output_root / "enabled",
+            enabled_capabilities=("release",),
+        )
+
+        self.assertEqual(
+            (self.output_root / "disabled/ci.yml").read_text(), "steps:\n"
+        )
+        self.assertEqual(
+            (self.output_root / "enabled/ci.yml").read_text(),
+            "steps:\n- run: package\n",
+        )
+
+    def test_variant_slot_binding_replaces_default_fragments(self) -> None:
+        (self.root / "shared/layouts").mkdir(parents=True)
+        (self.root / "shared/fragments/package").mkdir(parents=True)
+        (self.root / "shared/layouts/Cargo.toml.j2").write_text(
+            "[package]\n<$ slot(\"publish\") $>", encoding="utf-8"
+        )
+        (self.root / "shared/fragments/package/disabled.toml.j2").write_text(
+            "publish = false\n", encoding="utf-8"
+        )
+        (self.root / "shared/fragments/package/crates-io.toml.j2").write_text(
+            'publish = ["crates-io"]\n', encoding="utf-8"
+        )
+        self.write_config(
+            "crates-io-publish = false\n"
+            '[templates.example.slots."Cargo.toml"]\n'
+            'publish = { capability = "crates-io-publish", '
+            'default_fragments = ["shared:package/disabled.toml.j2"], '
+            'fragments = ["shared:package/crates-io.toml.j2"] }\n'
+        )
+
+        repository = TemplateRepository(self.root)
+        repository.render_to(
+            "example", self.output_root / "disabled", enabled_capabilities=()
+        )
+        repository.render_to(
+            "example",
+            self.output_root / "enabled",
+            enabled_capabilities=("crates-io-publish",),
+        )
+
+        self.assertEqual(
+            (self.output_root / "disabled/Cargo.toml").read_text(),
+            "[package]\npublish = false\n",
+        )
+        self.assertEqual(
+            (self.output_root / "enabled/Cargo.toml").read_text(),
+            '[package]\npublish = ["crates-io"]\n',
+        )
+
+    def test_capability_output_selectors_must_be_disjoint_and_match_sources(self) -> None:
+        (self.root / "shared/static/docs").mkdir()
+        (self.root / "shared/static/docs/index.md").write_text(
+            "documentation\n", encoding="utf-8"
+        )
+        cases = (
+            (
+                'docs-site = ["docs/", "docs/index.md"]\n',
+                "matched by multiple capability output selectors",
+            ),
+            ('docs-site = ["missing/"]\n', "does not match any output"),
+            ('docs-site = ["docs/*.md"]\n', "must not use glob syntax"),
+        )
+        for declaration, message in cases:
+            with self.subTest(declaration=declaration):
+                self.write_config(
+                    "docs-site = true\n"
+                    "[templates.example.capability_outputs]\n"
+                    + declaration
+                )
+                with self.assertRaisesRegex(TemplateError, message):
+                    TemplateRepository(self.root).render("example")
+
+    def test_conditional_binding_requires_optional_slot(self) -> None:
+        (self.root / "shared/layouts").mkdir(parents=True)
+        (self.root / "shared/fragments/tasks").mkdir(parents=True)
+        (self.root / "shared/layouts/ci.yml.j2").write_text(
+            "<$ slot(\"package\") $>", encoding="utf-8"
+        )
+        (self.root / "shared/fragments/tasks/package.yml.j2").write_text(
+            "- run: package\n", encoding="utf-8"
+        )
+        self.write_config(
+            "release = false\n"
+            '[templates.example.slots."ci.yml"]\n'
+            'package = { capability = "release", '
+            'fragments = ["shared:tasks/package.yml.j2"] }\n'
+        )
+
+        with self.assertRaisesRegex(TemplateError, "requires an optional slot"):
+            TemplateRepository(self.root).render("example")
+
+    def test_every_capability_must_affect_an_output_or_slot_binding(self) -> None:
+        self.write_config("unused = false\n")
+
+        with self.assertRaisesRegex(
+            TemplateError, "capability has no delivery effect.*unused"
+        ):
+            TemplateRepository(self.root).render("example")
+
+    def test_capability_ownership_rejects_undeclared_capabilities(self) -> None:
+        cases = (
+            (
+                "[templates.example.capability_outputs]\n"
+                'unknown = ["README.md"]\n',
+                "capability_outputs references undeclared capability",
+            ),
+            (
+                '[templates.example.slots."ci.yml"]\n'
+                'steps = { capability = "unknown", '
+                'fragments = ["shared:tasks/check.yml.j2"] }\n',
+                "binding example:ci.yml:steps references undeclared capability",
+            ),
+        )
+        for body, message in cases:
+            with self.subTest(body=body):
+                self.write_config(body)
+                with self.assertRaisesRegex(TemplateError, message):
+                    TemplateRepository(self.root)
+
+    def test_capability_bindings_require_non_empty_fragment_groups(self) -> None:
+        cases = (
+            ('fragments = []', "fragments must be a non-empty array"),
+            (
+                'fragments = ["shared:tasks/check.yml.j2"], '
+                "default_fragments = []",
+                "default_fragments must be a non-empty array",
+            ),
+        )
+        for declaration, message in cases:
+            with self.subTest(declaration=declaration):
+                self.write_config(
+                    "release = false\n"
+                    '[templates.example.slots."ci.yml"]\n'
+                    'steps = { capability = "release", '
+                    + declaration
+                    + " }\n"
+                )
+                with self.assertRaisesRegex(TemplateError, message):
+                    TemplateRepository(self.root)
+
+    def test_render_and_check_use_only_default_capability_set(self) -> None:
+        self.write_config(
+            "release = false\n"
+            "[templates.example.capability_outputs]\n"
+            'release = ["release.yml"]\n'
+        )
+        (self.root / "shared/static/README.md").write_text(
+            "readme\n", encoding="utf-8"
+        )
+        (self.root / "shared/static/release.yml").write_text(
+            "release\n", encoding="utf-8"
+        )
+
+        repository = TemplateRepository(self.root)
+        repository.render("example")
+        snapshot = self.root / "templates/example"
+        self.assertFalse((snapshot / "release.yml").exists())
+        self.assertTrue(repository.check("example").matches)
+
+        repository.render_to(
+            "example",
+            self.output_root / "enabled",
+            enabled_capabilities=("release",),
+        )
+        self.assertTrue((self.output_root / "enabled/release.yml").is_file())
+        self.assertFalse((snapshot / "release.yml").exists())
+        self.assertTrue(repository.check("example").matches)
+
+    def test_directory_selector_does_not_match_same_named_file(self) -> None:
+        self.write_config(
+            "docs-site = true\n"
+            "[templates.example.capability_outputs]\n"
+            'docs-site = ["docs/"]\n'
+        )
+        (self.root / "shared/static/docs").write_text("file\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(TemplateError, "does not match any output"):
+            TemplateRepository(self.root).render("example")
+
+    def test_capability_output_rejects_cross_capability_selector_overlap(self) -> None:
+        self.write_config(
+            "docs-site = true\n"
+            "release = false\n"
+            "[templates.example.capability_outputs]\n"
+            'docs-site = ["docs/"]\n'
+            'release = ["docs/index.md"]\n'
+        )
+        (self.root / "shared/static/docs").mkdir()
+        (self.root / "shared/static/docs/index.md").write_text(
+            "documentation\n", encoding="utf-8"
+        )
+
+        with self.assertRaisesRegex(
+            TemplateError, "matched by multiple capability output selectors"
+        ):
+            TemplateRepository(self.root).render("example")
+
+    def test_inactive_fragment_branches_are_still_validated(self) -> None:
+        (self.root / "shared/layouts").mkdir(parents=True)
+        (self.root / "shared/fragments/package").mkdir(parents=True)
+        (self.root / "shared/layouts/Cargo.toml.j2").write_text(
+            "<$ slot(\"publish\") $>", encoding="utf-8"
+        )
+        (self.root / "shared/fragments/package/disabled.toml.j2").write_text(
+            "publish = false\n", encoding="utf-8"
+        )
+        cases = (
+            (
+                'default_fragments = ["shared:package/disabled.toml.j2"], '
+                'fragments = ["overlay:missing.toml.j2"]',
+                (),
+            ),
+            (
+                'default_fragments = ["overlay:missing.toml.j2"], '
+                'fragments = ["shared:package/disabled.toml.j2"]',
+                ("release",),
+            ),
+        )
+        for declaration, enabled in cases:
+            with self.subTest(declaration=declaration):
+                self.write_config(
+                    "release = false\n"
+                    '[templates.example.slots."Cargo.toml"]\n'
+                    'publish = { capability = "release", '
+                    + declaration
+                    + " }\n"
+                )
+                repository = TemplateRepository(self.root)
+                with self.assertRaisesRegex(TemplateError, "invalid fragment reference"):
+                    repository.render_to(
+                        "example",
+                        self.output_root / "output",
+                        enabled_capabilities=enabled,
+                    )
+
+    def test_disabled_owned_layout_still_validates_required_slots(self) -> None:
+        (self.root / "shared/layouts").mkdir(parents=True)
+        (self.root / "shared/layouts/docs.yml.j2").write_text(
+            "<$ slot(\"steps\") $>", encoding="utf-8"
+        )
+        self.write_config(
+            "docs-site = false\n"
+            "[templates.example.capability_outputs]\n"
+            'docs-site = ["docs.yml"]\n'
+        )
+
+        repository = TemplateRepository(self.root)
+        with self.assertRaisesRegex(TemplateError, "does not bind required slot"):
+            repository.render_to(
+                "example", self.output_root / "disabled", enabled_capabilities=()
+            )
+
+    def test_disabled_owned_static_symlink_is_still_validated(self) -> None:
+        self.write_config(
+            "docs-site = false\n"
+            "[templates.example.capability_outputs]\n"
+            'docs-site = ["docs-link"]\n'
+        )
+        os.symlink("../outside", self.root / "shared/static/docs-link")
+
+        repository = TemplateRepository(self.root)
+        with self.assertRaisesRegex(TemplateError, "symlink escapes"):
+            repository.render_to(
+                "example", self.output_root / "disabled", enabled_capabilities=()
+            )
+
+    def test_render_to_rejects_repository_owned_destinations(self) -> None:
+        self.write_config()
+        repository = TemplateRepository(self.root)
+        ancestor_marker = self.root.parent / "ancestor-marker"
+        ancestor_marker.write_text("keep\n", encoding="utf-8")
+
+        for destination in (
+            self.root.parent,
+            self.root,
+            self.root / "templates/example",
+            self.root / "shared/generated",
+            self.root / "overlays/example/generated",
+            self.root / "config/generated",
+            self.root / "tools/generated",
+        ):
+            with self.subTest(destination=destination):
+                with self.assertRaisesRegex(
+                    TemplateError, "destination must be outside repository-owned paths"
+                ):
+                    repository.render_to(
+                        "example", destination, enabled_capabilities=()
+                    )
+        self.assertEqual(ancestor_marker.read_text(), "keep\n")
+        ancestor_marker.unlink()
+
     def test_static_symlink_must_stay_inside_template(self) -> None:
         self.write_config()
         os.symlink("../outside", self.root / "shared/static/link")
@@ -134,7 +491,8 @@ class TemplateRepositoryTest(unittest.TestCase):
 
     def test_instantiation_profile_requires_valid_validation_metadata(self) -> None:
         (self.root / "templates.toml").write_text(
-            "version = 1\n"
+            "version = 2\n"
+            "[templates.example.capabilities]\n"
             "[templates.example.instantiation]\n"
             'required = ["project_name"]\n'
             "[templates.example.instantiation.tokens]\n"
@@ -213,6 +571,80 @@ class TemplateRepositoryTest(unittest.TestCase):
 
         with self.assertRaisesRegex(TemplateError, "duplicate top-level keys"):
             TemplateRepository(self.root).render("example")
+
+    def test_rust_crates_io_publish_capability_renders_complete_variants(self) -> None:
+        repository_root = Path(__file__).resolve().parents[3]
+        repository = TemplateRepository(repository_root)
+        metadata = repository.validation_metadata("rust") | {
+            "description": 'Example "Rust" CLI description',
+        }
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output_root = Path(temporary)
+            disabled = output_root / "disabled"
+            enabled = output_root / "enabled"
+            repository.render_to(
+                "rust",
+                disabled,
+                enabled_capabilities=(),
+            )
+            repository.render_to(
+                "rust",
+                enabled,
+                enabled_capabilities=("crates-io-publish",),
+            )
+            repository.instantiate("rust", disabled, metadata)
+            repository.instantiate("rust", enabled, metadata)
+
+            disabled_cargo = tomllib.loads((disabled / "Cargo.toml").read_text())
+            enabled_cargo = tomllib.loads((enabled / "Cargo.toml").read_text())
+            self.assertEqual(disabled_cargo["package"]["publish"], False)
+            self.assertEqual(enabled_cargo["package"]["publish"], ["crates-io"])
+            self.assertEqual(
+                enabled_cargo["package"]["description"],
+                'Example "Rust" CLI description',
+            )
+            self.assertEqual(enabled_cargo["package"]["license"], "MIT")
+            self.assertEqual(
+                enabled_cargo["package"]["repository"],
+                "https://github.com/YewFence/example-rust-cli",
+            )
+            self.assertEqual(enabled_cargo["package"]["readme"], "README.md")
+
+            disabled_mise = (disabled / "mise.ci.toml").read_text()
+            enabled_mise = (enabled / "mise.ci.toml").read_text()
+            self.assertNotIn("crates-io:package:check", disabled_mise)
+            self.assertIn('[tasks."crates-io:package:check"]', enabled_mise)
+            self.assertIn('run = "cargo package --locked"', enabled_mise)
+
+            disabled_ci = (disabled / ".github/workflows/ci.yml").read_text()
+            enabled_ci = (enabled / ".github/workflows/ci.yml").read_text()
+            self.assertNotIn("crates-io:package:check", disabled_ci)
+            self.assertIn("mise -E ci run crates-io:package:check", enabled_ci)
+            self.assertIn("github.event_name == 'pull_request'", enabled_ci)
+
+            self.assertFalse((disabled / "CRATES_IO_PUBLISHING.md").exists())
+            self.assertTrue((enabled / "CRATES_IO_PUBLISHING.md").is_file())
+
+            release = (enabled / ".github/workflows/release.yml").read_text()
+            disabled_release = (disabled / ".github/workflows/release.yml").read_text()
+            self.assertNotIn("  publish-crate:\n", disabled_release)
+            self.assertIn("  publish-crate:\n", release)
+            self.assertIn("needs: [version, build, release]", release)
+            self.assertIn("cargo metadata --locked --no-deps --format-version 1", release)
+            self.assertIn("https://crates.io/api/v1/crates/", release)
+            self.assertIn("cargo publish --dry-run", release)
+            self.assertIn("continue-on-error: true", release)
+            self.assertIn("rust-lang/crates-io-auth-action@v1", release)
+            self.assertIn("crates.io trusted publishing did not provide a token", release)
+            self.assertLess(
+                release.index("  publish-crate:\n"),
+                release.index("  close-superseded-release-pr:\n"),
+            )
+            self.assertLess(
+                release.index("- name: Require crates.io authentication token"),
+                release.index('run: cargo publish --package "${CRATE_NAME}" --registry crates-io --locked'),
+            )
 
 
 if __name__ == "__main__":

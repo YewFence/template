@@ -17,7 +17,8 @@ class TemplateCheckTest(unittest.TestCase):
             (root / "shared/static").mkdir(parents=True)
             (root / "overlays/example/static").mkdir(parents=True)
             (root / "templates.toml").write_text(
-                "version = 1\n"
+                "version = 2\n"
+                "[templates.example.capabilities]\n"
                 "[templates.example.instantiation]\n"
                 'required = ["project_name"]\n'
                 "[templates.example.instantiation.tokens]\n"

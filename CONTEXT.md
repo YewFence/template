@@ -8,6 +8,10 @@ This repository maintains project blueprints and the infrastructure used to rend
 The files delivered to a user as a starting point for a new project. It may declare fuzzy major versions and excludes generated dependency state.
 _Avoid_: Reproducible template, locked template
 
+**Template capability**:
+An optional unit of template deliverable behavior selected as part of a template profile before project instantiation. It changes which behavior the resulting deliverable contains without becoming project identity metadata.
+_Avoid_: Feature flag, Template feature, Template option
+
 **Maintenance environment**:
 The monorepo-owned tools and CI used to render and validate template deliverables. Its dependency state and GitHub Actions remain precisely locked.
 _Avoid_: Template environment

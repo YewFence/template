@@ -7,6 +7,7 @@ description = "[PLACEHOLDER] Audit project dependencies for known vulnerabilitie
 run = 'echo "[PLACEHOLDER] Replace audit with the project security audit, such as cargo audit or govulncheck ./..."'
 
 
+
 [tasks.'actions:pin:check']
 # Need github token to avoid rate limit
 description = "Check for action pinned version"

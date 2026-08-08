@@ -1,4 +1,4 @@
-version = 1
+version = 2
 
 [apply]
 protected = [
@@ -15,6 +15,7 @@ hints = [
 ]
 
 [templates.common]
+ [templates.common.capabilities]
  [templates.common.instantiation]
  required = ["project_name", "description", "github_owner", "repo_name"]
  [templates.common.instantiation.tokens]
@@ -45,6 +46,7 @@ hints = [
  release_needs = ["shared:workflows/release/version-only.j2"]
 
 [templates.go-cli]
+ [templates.go-cli.capabilities]
  [templates.go-cli.instantiation]
  required = ["project_name", "description", "github_owner", "repo_name", "go_module", "binary_name"]
  [templates.go-cli.instantiation.tokens]
@@ -87,6 +89,8 @@ hints = [
  release_files = ["shared:workflows/release/files.yml.j2"]
 
 [templates.rust]
+ [templates.rust.capabilities]
+ crates-io-publish = false
  [templates.rust.instantiation]
  required = ["project_name", "description", "github_owner", "repo_name", "cargo_package", "binary_name"]
  [templates.rust.instantiation.tokens]
@@ -102,6 +106,9 @@ hints = [
  [templates.rust.instantiation.derived.PROJECT_NAME_JSON]
  source = "project_name"
  transform = "json-string"
+ [templates.rust.instantiation.derived.PROJECT_DESCRIPTION_TOML]
+ source = "description"
+ transform = "toml-basic-string"
  [templates.rust.instantiation.derived.RUST_CRATE_IDENT]
  source = "cargo_package"
  transform = "hyphen-to-underscore"
@@ -117,8 +124,14 @@ hints = [
  audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
  release_version_tasks = ["overlay:mise/ci/release-version.toml.j2"]
  release_package = ["overlay:mise/ci/package.toml.j2"]
+ crates_io_package_check = { capability = "crates-io-publish", fragments = ["overlay:mise/ci/crates-io-package-check.toml.j2"] }
+ [templates.rust.capability_outputs]
+ crates-io-publish = ["CRATES_IO_PUBLISHING.md"]
+ [templates.rust.slots."Cargo.toml"]
+ package_publish = { capability = "crates-io-publish", default_fragments = ["overlay:cargo/publish-disabled.toml.j2"], fragments = ["overlay:cargo/publish-crates-io.toml.j2"] }
  [templates.rust.slots.".github/workflows/ci.yml"]
  project_cache = ["overlay:workflows/ci/project-cache.yml.j2"]
+ crates_io_package_check = { capability = "crates-io-publish", fragments = ["overlay:workflows/ci/crates-io-package-check.yml.j2"] }
  [templates.rust.slots.".github/workflows/audit.yml"]
  audit_cache = ["overlay:workflows/audit/cache.yml.j2"]
  audit_paths = ["overlay:workflows/audit/paths.yml.j2"]
@@ -132,3 +145,4 @@ hints = [
  release_needs = ["shared:workflows/release/version-and-build.j2"]
  release_artifact_download = ["overlay:workflows/release/download-artifacts.yml.j2"]
  release_files = ["shared:workflows/release/files.yml.j2"]
+ publish_crate_job = { capability = "crates-io-publish", fragments = ["overlay:workflows/release/publish-crate-job.yml.j2"] }

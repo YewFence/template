@@ -4,7 +4,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from template_tool.instantiation import InstantiationError, InstantiationSpec, instantiate_tree
+from template_tool.instantiation import (
+    InstantiationError,
+    InstantiationSpec,
+    instantiate_tree,
+    validate_metadata_value,
+)
 
 
 class InstantiationTest(unittest.TestCase):
@@ -45,6 +50,12 @@ class InstantiationTest(unittest.TestCase):
         (self.root / "cmd/example").mkdir(parents=True)
         with self.assertRaisesRegex(InstantiationError, "target already exists"):
             instantiate_tree(self.root, self.spec, self.spec.validation_metadata)
+
+    def test_rejects_invalid_github_identity_metadata(self) -> None:
+        with self.assertRaisesRegex(InstantiationError, "valid GitHub owner"):
+            validate_metadata_value("github_owner", "YewFence/")
+        with self.assertRaisesRegex(InstantiationError, "valid GitHub repository"):
+            validate_metadata_value("repo_name", "example/repository")
 
 
 if __name__ == "__main__":

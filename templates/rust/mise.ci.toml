@@ -9,6 +9,7 @@ description = "Audit Rust dependencies for security advisories"
 run = "cargo audit --deny warnings"
 
 
+
 [tasks.'actions:pin:check']
 # Need github token to avoid rate limit
 description = "Check for action pinned version"

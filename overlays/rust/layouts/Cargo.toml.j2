@@ -1,11 +1,13 @@
 [package]
 name = "{{CARGO_PACKAGE}}"
 version = "0.1.0"
-description = "An opinionated Rust project template."
+description = {{PROJECT_DESCRIPTION_TOML}}
 edition = "2024"
 rust-version = "1.97"
 license = "MIT"
-publish = false
+repository = "https://github.com/{{GITHUB_OWNER}}/{{REPO_NAME}}"
+readme = "README.md"
+<$ slot("package_publish") $>
 
 [lints.rust]
 unsafe_code = "forbid"

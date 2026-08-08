@@ -22,11 +22,6 @@ on:
         required: false
         type: boolean
         default: false
-      prerelease:
-        description: "Whether to mark the GitHub Release as a pre-release"
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -95,7 +90,6 @@ jobs:
         id: release
         env:
           INPUT_TAG: ${{ inputs.tag }}
-          INPUT_PRERELEASE: ${{ inputs.prerelease }}
           REF_NAME: ${{ github.ref_name }}
           MERGE_COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
@@ -109,7 +103,6 @@ jobs:
             tag="${INPUT_TAG}"
             checkout_ref="${INPUT_TAG}"
             should_release="true"
-            prerelease="${INPUT_PRERELEASE}"
           elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             tag="${REF_NAME}"
             checkout_ref="${REF_NAME}"
@@ -126,7 +119,7 @@ jobs:
             exit 1
           fi
 
-          if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" && "${tag}" == *-* ]]; then
+          if [[ "${tag}" == *-* ]]; then
             prerelease="true"
           fi
 
@@ -221,12 +214,10 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             platform: linux-x86_64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             platform: linux-aarch64
-            packages: gcc-aarch64-linux-gnu
-            linker_env: CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-          - os: macos-latest
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             platform: macos-x86_64
           - os: macos-latest
@@ -273,12 +264,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y "${packages[@]}"
 
-      - name: Configure linker
-        if: ${{ matrix.linker_env }}
-        env:
-          LINKER_ENV: ${{ matrix.linker_env }}
-        run: echo "${LINKER_ENV}" >> "${GITHUB_ENV}"
-
       - name: Package release binary
         run: mise run release:package
 
@@ -289,7 +274,6 @@ jobs:
           path: dist/*.tar.gz
           if-no-files-found: error
           retention-days: 1
-
 
   release:
     name: Publish GitHub Release
@@ -409,6 +393,8 @@ jobs:
         run: |
           echo "latest tag was not moved"
           echo "| Moved Latest Tag | \`skipped\` |" >> "${GITHUB_STEP_SUMMARY}"
+
+
 
   close-superseded-release-pr:
     name: Close Superseded Release PR
