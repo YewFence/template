@@ -86,8 +86,11 @@ MISE_OFFLINE=0 mise run actions:update
 - [`docs/adr/`](docs/adr/)：仍然有效的长期架构决策及其取舍。
 - [`docs/plans/`](docs/plans/)：尚未完成的活跃工作，只保留未来步骤。
 - [`docs/archive/`](docs/archive/)：已完成迁移、实现记录和废弃方案，仅供追溯。
-- [`docs/agents/domain.md`](docs/agents/domain.md)：工程代理读取领域术语和 ADR 的规则。
-- [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md)：Linear workspace、team、project 和关系管理规则；执行任何 Linear 操作前先阅读。
+
+## Agent skills
+
+- [`docs/agents/repository-tracker.md`](docs/agents/repository-tracker.md)：仓库共享工作使用 GitHub Issues；执行 Issue、Pull Request、原生关系或 spec 发布操作前先阅读。
+- [`docs/agents/domain.md`](docs/agents/domain.md)：探索代码、命名领域概念或评估架构决策前先阅读。
 
 ## 外部操作
 
