@@ -110,19 +110,6 @@ alias = "f"
 description = "Install Git hooks managed by hk"
 run = "hk install"
 
-[tasks."actions:check"]
-description = "Run actionlint"
-depends = ["actions:pin-offline:check"]
-run = "actionlint .github/workflows/*.yml"
-
-[tasks.'actions:update']
-description = "Update GitHub Action versions and pin to commit hashes"
-run = "pinact run --update"
-
-[tasks.'actions:pin-offline:check']
-description = "Check GitHub Action versions and pin to commit hashes"
-run = "unset PINACT_MIN_AGE && pinact run --fix=false --no-api"
-
 [tasks.'docs:install']
 description = "Install documentation site dependencies"
 dir = "docs"
@@ -155,3 +142,16 @@ description = "Preview the VitePress documentation site"
 depends = ["docs:install:locked"]
 dir = "docs"
 run = "pnpm run preview"
+
+[tasks."actions:check"]
+description = "Run actionlint"
+depends = ["actions:pin-offline:check"]
+run = "actionlint .github/workflows/*.yml"
+
+[tasks.'actions:update']
+description = "Update GitHub Action versions and pin to commit hashes"
+run = "pinact run --update"
+
+[tasks.'actions:pin-offline:check']
+description = "Check GitHub Action versions and pin to commit hashes"
+run = "unset PINACT_MIN_AGE && pinact run --fix=false --no-api"

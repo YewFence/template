@@ -1,5 +1,10 @@
 {
   "enabledManagers": ["github-actions", "npm", "gomod", "mise"],
+  "capabilityContributions": {
+    "docs-site": {
+      "enabledManagers": ["npm"]
+    }
+  },
   "packageRules": [
     {
       "description": "Tidy Go modules after dependency updates.",

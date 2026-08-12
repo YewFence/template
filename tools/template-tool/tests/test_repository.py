@@ -572,6 +572,171 @@ class TemplateRepositoryTest(unittest.TestCase):
         with self.assertRaisesRegex(TemplateError, "duplicate top-level keys"):
             TemplateRepository(self.root).render("example")
 
+    def test_renovate_capability_contribution_is_filtered_and_validated(self) -> None:
+        self.write_config(
+            "docs-site = true\n"
+            "[templates.example.capability_outputs]\n"
+            'docs-site = ["docs/"]\n'
+        )
+        (self.root / "shared/static/docs").mkdir()
+        (self.root / "shared/static/docs/index.md").write_text(
+            "documentation\n", encoding="utf-8"
+        )
+        (self.root / "shared/renovate").mkdir(parents=True)
+        (self.root / "overlays/example/fragments/renovate").mkdir(parents=True)
+        (self.root / "shared/renovate/base.json").write_text(
+            '{"packageRules": []}', encoding="utf-8"
+        )
+        profile_path = self.root / "overlays/example/fragments/renovate/profile.json"
+        profile_path.write_text(
+            json.dumps(
+                {
+                    "enabledManagers": ["mise", "npm"],
+                    "capabilityContributions": {
+                        "docs-site": {
+                            "enabledManagers": ["npm"],
+                            "packageRules": [
+                                {
+                                    "description": "documentation",
+                                    "matchManagers": ["npm"],
+                                }
+                            ],
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        repository = TemplateRepository(self.root)
+        repository.render_to(
+            "example", self.output_root / "disabled", enabled_capabilities=()
+        )
+        repository.render_to(
+            "example",
+            self.output_root / "enabled",
+            enabled_capabilities=("docs-site",),
+        )
+
+        disabled = json.loads(
+            (self.output_root / "disabled/renovate.json").read_text()
+        )
+        enabled = json.loads((self.output_root / "enabled/renovate.json").read_text())
+        self.assertEqual(disabled["enabledManagers"], ["mise"])
+        self.assertNotIn("packageRules", disabled)
+        self.assertEqual(enabled["enabledManagers"], ["mise", "npm"])
+        self.assertEqual(enabled["packageRules"][0]["description"], "documentation")
+
+        profile_path.write_text(
+            json.dumps(
+                {
+                    "capabilityContributions": {
+                        "unknown": {"enabledManagers": ["npm"]}
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(
+            TemplateError, "contribution references undeclared capability"
+        ):
+            TemplateRepository(self.root).render("example")
+
+    def test_docs_site_capability_renders_complete_profile_variants(self) -> None:
+        repository_root = Path(__file__).resolve().parents[3]
+        repository = TemplateRepository(repository_root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output_root = Path(temporary)
+            for template in ("common", "go-cli", "rust"):
+                with self.subTest(template=template):
+                    enabled_capabilities = repository.resolve_capabilities(template)
+                    disabled_capabilities = tuple(
+                        capability
+                        for capability in enabled_capabilities
+                        if capability != "docs-site"
+                    )
+                    enabled = output_root / template / "enabled"
+                    disabled = output_root / template / "disabled"
+                    repository.render_to(
+                        template,
+                        enabled,
+                        enabled_capabilities=enabled_capabilities,
+                    )
+                    repository.render_to(
+                        template,
+                        disabled,
+                        enabled_capabilities=disabled_capabilities,
+                    )
+
+                    self.assertTrue((enabled / "docs/package.json").is_file())
+                    self.assertTrue(
+                        (enabled / ".github/workflows/docs.yml").is_file()
+                    )
+                    self.assertFalse((disabled / "docs").exists())
+                    self.assertFalse(
+                        (disabled / ".github/workflows/docs.yml").exists()
+                    )
+
+                    enabled_mise = (enabled / "mise.toml").read_text()
+                    disabled_mise = (disabled / "mise.toml").read_text()
+                    self.assertIn('node = "26"', enabled_mise)
+                    self.assertIn('pnpm = "11"', enabled_mise)
+                    self.assertIn("[tasks.'docs:build']", enabled_mise)
+                    self.assertNotIn('node = "26"', disabled_mise)
+                    self.assertNotIn('pnpm = "11"', disabled_mise)
+                    self.assertNotIn("docs:build", disabled_mise)
+
+                    enabled_ci = (enabled / ".github/workflows/ci.yml").read_text()
+                    disabled_ci = (disabled / ".github/workflows/ci.yml").read_text()
+                    self.assertIn("  docs:\n", enabled_ci)
+                    self.assertNotIn("  docs:\n", disabled_ci)
+                    self.assertEqual(enabled_ci, enabled_ci.rstrip() + "\n")
+                    self.assertEqual(disabled_ci, disabled_ci.rstrip() + "\n")
+                    self.assertEqual(enabled_mise, enabled_mise.rstrip() + "\n")
+                    self.assertEqual(disabled_mise, disabled_mise.rstrip() + "\n")
+
+                    enabled_readme = (enabled / "README.md").read_text()
+                    disabled_readme = (disabled / "README.md").read_text()
+                    self.assertIn("docs-online-blue", enabled_readme)
+                    self.assertIn("## Documentation", enabled_readme)
+                    self.assertNotIn("docs-online-blue", disabled_readme)
+                    self.assertNotIn("## Documentation", disabled_readme)
+
+                    enabled_contributing = (enabled / "CONTRIBUTING.md").read_text()
+                    disabled_contributing = (
+                        disabled / "CONTRIBUTING.md"
+                    ).read_text()
+                    self.assertIn("Documentation Site", enabled_contributing)
+                    self.assertNotIn("Documentation Site", disabled_contributing)
+
+                    enabled_gitignore = (enabled / ".gitignore").read_text()
+                    disabled_gitignore = (disabled / ".gitignore").read_text()
+                    self.assertIn("/docs/node_modules/", enabled_gitignore)
+                    self.assertNotIn("/docs/node_modules/", disabled_gitignore)
+                    self.assertFalse(disabled_gitignore.startswith("\n"))
+
+                    enabled_renovate = json.loads(
+                        (enabled / "renovate.json").read_text()
+                    )
+                    disabled_renovate = json.loads(
+                        (disabled / "renovate.json").read_text()
+                    )
+                    self.assertIn("npm", enabled_renovate["enabledManagers"])
+                    self.assertNotIn("npm", disabled_renovate["enabledManagers"])
+                    self.assertTrue(
+                        any(
+                            rule.get("matchManagers") == ["npm"]
+                            for rule in enabled_renovate["packageRules"]
+                        )
+                    )
+                    self.assertFalse(
+                        any(
+                            rule.get("matchManagers") == ["npm"]
+                            for rule in disabled_renovate["packageRules"]
+                        )
+                    )
+
     def test_rust_crates_io_publish_capability_renders_complete_variants(self) -> None:
         repository_root = Path(__file__).resolve().parents[3]
         repository = TemplateRepository(repository_root)
@@ -628,6 +793,7 @@ class TemplateRepositoryTest(unittest.TestCase):
 
             release = (enabled / ".github/workflows/release.yml").read_text()
             disabled_release = (disabled / ".github/workflows/release.yml").read_text()
+            self.assertNotIn("matrix.packages", release)
             self.assertNotIn("  publish-crate:\n", disabled_release)
             self.assertIn("  publish-crate:\n", release)
             self.assertIn("needs: [version, build, release]", release)

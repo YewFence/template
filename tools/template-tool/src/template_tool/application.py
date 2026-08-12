@@ -34,6 +34,7 @@ class ApplyResult:
     template: str
     reference: str
     commit: str
+    capabilities: tuple[str, ...]
     skipped: tuple[str, ...]
     hints: tuple[str, ...]
     conflicted: bool
@@ -47,43 +48,221 @@ class InitProjectResult:
     application: ApplyResult
 
 
+@dataclass(frozen=True)
+class SelectedTemplate:
+    repository: str
+    reference: str
+    commit: str
+    source: Path
+    policy: ApplyPolicy
+    templates: TemplateRepository
+
+    def required_metadata(self, template: str) -> tuple[str, ...]:
+        try:
+            self.templates.select(template)
+            return self.templates.required_metadata(template)
+        except TemplateError as error:
+            raise ApplicationError(str(error)) from error
+
+    def capabilities(self, template: str) -> tuple[tuple[str, bool], ...]:
+        try:
+            self.templates.select(template)
+            return self.templates.capabilities(template)
+        except TemplateError as error:
+            raise ApplicationError(str(error)) from error
+
+    def resolve_capabilities(
+        self,
+        template: str,
+        *,
+        enable: tuple[str, ...] = (),
+        disable: tuple[str, ...] = (),
+    ) -> tuple[str, ...]:
+        try:
+            self.templates.select(template)
+            return self.templates.resolve_capabilities(
+                template, enable=enable, disable=disable
+            )
+        except TemplateError as error:
+            raise ApplicationError(str(error)) from error
+
+    def prepare(
+        self,
+        template: str,
+        destination: Path | str,
+        *,
+        metadata: dict[str, str] | None = None,
+        enabled_capabilities: tuple[str, ...] | None = None,
+    ) -> Path:
+        return prepare_template(
+            self.templates,
+            template,
+            destination,
+            metadata=metadata,
+            enabled_capabilities=enabled_capabilities,
+        )
+
+
+def prepare_template(
+    templates: TemplateRepository,
+    template: str,
+    destination: Path | str,
+    *,
+    metadata: dict[str, str] | None = None,
+    enabled_capabilities: tuple[str, ...] | None = None,
+) -> Path:
+    templates.select(template)
+    prepared = Path(destination).resolve()
+    try:
+        if metadata is not None:
+            build_token_values(metadata, templates.instantiation_spec(template))
+        templates.render_to(
+            template,
+            prepared,
+            enabled_capabilities=enabled_capabilities,
+        )
+        if metadata is not None:
+            templates.instantiate(template, prepared, metadata)
+    except (TemplateError, InstantiationError) as error:
+        raise ApplicationError(f"cannot prepare {template!r}: {error}") from error
+    return prepared
+
+
 def initialize_project(
     repository: str,
     reference: str,
     template: str,
     target: Path | str,
-    metadata: dict[str, str],
+    metadata: dict[str, str] | None,
+    *,
+    enabled_capabilities: tuple[str, ...] | None = None,
+    keep_tokens: bool = False,
 ) -> InitProjectResult:
     _validate_template_name(template)
     target_root = _unborn_target_root(Path(target))
     _require_clean_repository(target_root)
     _require_idle_repository(target_root)
-    _validate_metadata_for_template(repository, reference, template, metadata)
-    try:
-        _run(
-            [
-                "git",
-                "commit",
-                "--allow-empty",
-                "-m",
-                "chore: initialize repository",
-            ],
-            cwd=target_root,
+    with tempfile.TemporaryDirectory(prefix="init-project-") as temporary:
+        temporary_root = Path(temporary)
+        with select_template(repository, reference, temporary_root) as selected:
+            return initialize_selected_project(
+                selected,
+                template,
+                target_root,
+                metadata,
+                enabled_capabilities=enabled_capabilities,
+                keep_tokens=keep_tokens,
+            )
+
+
+def initialize_selected_project(
+    selected: SelectedTemplate,
+    template: str,
+    target: Path | str,
+    metadata: dict[str, str] | None,
+    *,
+    enabled_capabilities: tuple[str, ...] | None = None,
+    keep_tokens: bool = False,
+) -> InitProjectResult:
+    _validate_template_name(template)
+    if keep_tokens and metadata is not None:
+        raise ApplicationError("--keep-tokens cannot be combined with metadata")
+    target_root = _unborn_target_root(Path(target))
+    _require_clean_repository(target_root)
+    _require_idle_repository(target_root)
+    with tempfile.TemporaryDirectory(prefix="init-project-prepared-") as temporary:
+        temporary_root = Path(temporary)
+        effective_capabilities = _effective_capabilities(
+            selected, template, enabled_capabilities
         )
-    except subprocess.CalledProcessError as error:
-        raise ApplicationError(
-            "cannot create the initial commit; review the Git author identity, signing, and hooks"
-        ) from error
-    initial_commit = _output(["git", "rev-parse", "HEAD^{commit}"], cwd=target_root)
-    try:
-        application = _apply_template(
-            repository, reference, template, target_root, metadata=metadata, protect=False
+        prepared = selected.prepare(
+            template,
+            temporary_root / "prepared",
+            metadata=None if keep_tokens else metadata,
+            enabled_capabilities=effective_capabilities,
         )
-    except (ApplicationError, subprocess.CalledProcessError) as error:
-        raise ApplicationError(
-            f"created initial commit {initial_commit}, but template application failed: {error}"
-        ) from error
+        temporary_commit, skipped, commit_source = _prepared_template_commit(
+            prepared,
+            template,
+            (),
+            temporary_root,
+        )
+        _unborn_target_root(target_root)
+        _require_clean_repository(target_root)
+        _require_idle_repository(target_root)
+        try:
+            _run(
+                [
+                    "git",
+                    "commit",
+                    "--allow-empty",
+                    "-m",
+                    "chore: initialize repository",
+                ],
+                cwd=target_root,
+            )
+        except subprocess.CalledProcessError as error:
+            raise ApplicationError(
+                "cannot create the initial commit; review the Git author identity, signing, and hooks"
+            ) from error
+        initial_commit = _output(["git", "rev-parse", "HEAD^{commit}"], cwd=target_root)
+        application = _apply_prepared_template(
+            selected,
+            template,
+            target_root,
+            temporary_commit,
+            commit_source,
+            skipped,
+            protect=False,
+            instantiated=not keep_tokens,
+            capabilities=effective_capabilities,
+        )
     return InitProjectResult(initial_commit, application)
+
+
+def apply_selected_template(
+    selected: SelectedTemplate,
+    template: str,
+    target: Path | str,
+    metadata: dict[str, str] | None = None,
+    *,
+    enabled_capabilities: tuple[str, ...] | None = None,
+    keep_tokens: bool = False,
+) -> ApplyResult:
+    _validate_template_name(template)
+    if keep_tokens and metadata is not None:
+        raise ApplicationError("--keep-tokens cannot be combined with metadata")
+    target_root = _validated_apply_target_root(Path(target))
+    with tempfile.TemporaryDirectory(prefix="apply-template-prepared-") as temporary:
+        temporary_root = Path(temporary)
+        effective_capabilities = _effective_capabilities(
+            selected, template, enabled_capabilities
+        )
+        prepared = selected.prepare(
+            template,
+            temporary_root / "prepared",
+            metadata=None if keep_tokens else metadata,
+            enabled_capabilities=effective_capabilities,
+        )
+        temporary_commit, skipped, commit_source = _prepared_template_commit(
+            prepared,
+            template,
+            selected.policy.protected,
+            temporary_root,
+        )
+        _require_clean_repository(target_root)
+        _require_idle_repository(target_root)
+        return _apply_prepared_template(
+            selected,
+            template,
+            target_root,
+            temporary_commit,
+            commit_source,
+            skipped,
+            protect=True,
+            instantiated=not keep_tokens,
+            capabilities=effective_capabilities,
+        )
 
 
 def apply_template(
@@ -93,21 +272,23 @@ def apply_template(
     target: Path | str,
     metadata: dict[str, str] | None = None,
     *,
+    enabled_capabilities: tuple[str, ...] | None = None,
     keep_tokens: bool = False,
 ) -> ApplyResult:
     _validate_template_name(template)
     if keep_tokens and metadata is not None:
         raise ApplicationError("--keep-tokens cannot be combined with metadata")
-    if not keep_tokens:
-        _validate_metadata_for_template(repository, reference, template, metadata or {})
-    return _apply_template(
-        repository,
-        reference,
-        template,
-        target,
-        metadata=None if keep_tokens else metadata,
-        protect=True,
-    )
+    target_root = _validated_apply_target_root(Path(target))
+    with tempfile.TemporaryDirectory(prefix="apply-template-") as temporary:
+        with select_template(repository, reference, Path(temporary)) as selected:
+            return apply_selected_template(
+                selected,
+                template,
+                target_root,
+                metadata=None if keep_tokens else metadata,
+                enabled_capabilities=enabled_capabilities,
+                keep_tokens=keep_tokens,
+            )
 
 
 def validate_apply_target(target: Path | str) -> None:
@@ -115,125 +296,98 @@ def validate_apply_target(target: Path | str) -> None:
     _validated_apply_target_root(Path(target))
 
 
+def _effective_capabilities(
+    selected: SelectedTemplate,
+    template: str,
+    enabled_capabilities: tuple[str, ...] | None,
+) -> tuple[str, ...]:
+    if enabled_capabilities is None:
+        return selected.resolve_capabilities(template)
+    requested = set(enabled_capabilities)
+    return selected.resolve_capabilities(
+        template,
+        enable=enabled_capabilities,
+        disable=tuple(
+            name for name, _ in selected.capabilities(template) if name not in requested
+        ),
+    )
+
+
 def required_metadata(
     repository: str, reference: str, template: str
 ) -> tuple[str, ...]:
     _validate_template_name(template)
-    with _fetched_template(repository, reference, template) as fetched:
-        return fetched[2].required_metadata(template)
+    with tempfile.TemporaryDirectory(prefix="template-contract-") as temporary:
+        with select_template(repository, reference, Path(temporary)) as selected:
+            return selected.required_metadata(template)
 
 
-def _validate_metadata_for_template(
-    repository: str,
-    reference: str,
+def _apply_prepared_template(
+    selected: SelectedTemplate,
     template: str,
-    metadata: dict[str, str],
-) -> None:
-    with _fetched_template(repository, reference, template) as fetched:
-        _, _, repository_reader = fetched
-        try:
-            build_token_values(metadata, repository_reader.instantiation_spec(template))
-        except (TemplateError, InstantiationError) as error:
-            raise ApplicationError(f"cannot instantiate {template!r}: {error}") from error
-
-
-def _apply_template(
-    repository: str,
-    reference: str,
-    template: str,
-    target: Path | str,
+    target_root: Path,
+    temporary_commit: str,
+    commit_source: Path,
+    skipped: tuple[str, ...],
     *,
-    metadata: dict[str, str] | None,
     protect: bool,
+    instantiated: bool,
+    capabilities: tuple[str, ...],
 ) -> ApplyResult:
-    target_root = _validated_apply_target_root(Path(target))
+    _run(
+        ["git", "fetch", "--quiet", "--no-tags", str(commit_source), temporary_commit],
+        cwd=target_root,
+    )
+    completed = subprocess.run(
+        [
+            "git",
+            "merge",
+            "--squash",
+            "--allow-unrelated-histories",
+            "--no-edit",
+            "FETCH_HEAD",
+        ],
+        cwd=target_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.stdout:
+        print(completed.stdout, end="")
+    if completed.stderr:
+        print(completed.stderr, end="", file=os.sys.stderr)
 
-    with tempfile.TemporaryDirectory(prefix="apply-template-") as temporary:
-        source, commit, policy = _fetch_template(
-            repository, reference, template, Path(temporary)
+    conflicted = bool(_output_bytes(["git", "ls-files", "-u"], cwd=target_root))
+    merge_head = _git_path(target_root, "MERGE_HEAD")
+    if merge_head.exists():
+        _run(["git", "reset", "--hard", "HEAD"], cwd=target_root)
+        raise ApplicationError("squash merge unexpectedly created MERGE_HEAD")
+    if completed.returncode != 0 and not conflicted:
+        _run(["git", "reset", "--hard", "HEAD"], cwd=target_root)
+        raise ApplicationError(
+            f"git squash merge failed with exit code {completed.returncode}"
         )
-
-        temporary_commit, skipped = _filtered_template_commit(
-            source,
-            commit,
-            template,
-            policy.protected if protect else (),
-            Path(temporary),
-            metadata,
-        )
-
-        _run(
-            ["git", "fetch", "--quiet", "--no-tags", str(source), temporary_commit],
-            cwd=target_root,
-        )
-        completed = subprocess.run(
-            [
-                "git",
-                "merge",
-                "--squash",
-                "--allow-unrelated-histories",
-                "--no-edit",
-                "FETCH_HEAD",
-            ],
-            cwd=target_root,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if completed.stdout:
-            print(completed.stdout, end="")
-        if completed.stderr:
-            print(completed.stderr, end="", file=os.sys.stderr)
-
-        conflicted = bool(_output_bytes(["git", "ls-files", "-u"], cwd=target_root))
-        merge_head = _git_path(target_root, "MERGE_HEAD")
-        if merge_head.exists():
-            _run(["git", "reset", "--hard", "HEAD"], cwd=target_root)
-            raise ApplicationError("squash merge unexpectedly created MERGE_HEAD")
-        if completed.returncode != 0 and not conflicted:
-            _run(["git", "reset", "--hard", "HEAD"], cwd=target_root)
-            raise ApplicationError(
-                f"git squash merge failed with exit code {completed.returncode}"
-            )
-
-        return ApplyResult(
-            repository=repository,
-            template=template,
-            reference=reference,
-            commit=commit,
-            skipped=skipped,
-            hints=policy.hints if protect else (),
-            conflicted=conflicted,
-            jujutsu=(target_root / ".jj").exists(),
-            instantiated=metadata is not None,
-        )
+    return ApplyResult(
+        repository=selected.repository,
+        template=template,
+        reference=selected.reference,
+        commit=selected.commit,
+        capabilities=capabilities,
+        skipped=skipped,
+        hints=selected.policy.hints if protect else (),
+        conflicted=conflicted,
+        jujutsu=(target_root / ".jj").exists(),
+        instantiated=instantiated,
+    )
 
 
 @contextmanager
-def _fetched_template(
-    repository: str, reference: str, template: str
-) -> Iterator[tuple[Path, str, TemplateRepository]]:
-    with tempfile.TemporaryDirectory(prefix="template-contract-") as temporary:
-        source, commit, _ = _fetch_template(
-            repository, reference, template, Path(temporary)
-        )
-        repository_reader = TemplateRepository(source)
-        yield source, commit, repository_reader
-
-
-def _fetch_template(
-    repository: str, reference: str, template: str, temporary: Path
-) -> tuple[Path, str, ApplyPolicy]:
+def select_template(
+    repository: str, reference: str, temporary: Path
+) -> Iterator[SelectedTemplate]:
     source = temporary / "source"
     _run(["git", "init", "--quiet", str(source)])
     _run(["git", "remote", "add", "origin", repository], cwd=source)
-    _run(["git", "sparse-checkout", "init", "--cone"], cwd=source)
-    _run(
-        [
-            "git", "sparse-checkout", "set", "tools/template-tool", "scripts", "templates.toml", f"templates/{template}"
-        ],
-        cwd=source,
-    )
     _run(
         ["git", "fetch", "--quiet", "--no-tags", "--depth=1", "--filter=blob:none", "origin", reference],
         cwd=source,
@@ -245,13 +399,41 @@ def _fetch_template(
         repository_reader = TemplateRepository(source)
     except TemplateError as error:
         raise ApplicationError(f"invalid fetched templates.toml: {error}") from error
-    if template not in templates:
-        choices = ", ".join(templates)
-        raise ApplicationError(
-            f"unknown template {template!r} at {commit}; expected one of: {choices}"
-        )
-    repository_reader.select(template)
-    return source, commit, policy
+    if tuple(repository_reader.template_names) != templates:
+        raise ApplicationError("fetched templates.toml has inconsistent template declarations")
+    yield SelectedTemplate(
+        repository,
+        reference,
+        commit,
+        source,
+        policy,
+        repository_reader,
+    )
+
+
+def selected_template_from_source(
+    repository: str, reference: str, source: Path | str
+) -> SelectedTemplate:
+    source_root = Path(source).resolve()
+    try:
+        commit = _output(["git", "rev-parse", "HEAD^{commit}"], cwd=source_root)
+    except subprocess.CalledProcessError as error:
+        raise ApplicationError(f"selected source is not a Git checkout: {source_root}") from error
+    policy, templates = _load_apply_config(source_root / "templates.toml")
+    try:
+        repository_reader = TemplateRepository(source_root)
+    except TemplateError as error:
+        raise ApplicationError(f"invalid selected templates.toml: {error}") from error
+    if tuple(repository_reader.template_names) != templates:
+        raise ApplicationError("selected templates.toml has inconsistent template declarations")
+    return SelectedTemplate(
+        repository,
+        reference,
+        commit,
+        source_root,
+        policy,
+        repository_reader,
+    )
 
 
 def _validate_template_name(template: str) -> None:
@@ -360,23 +542,25 @@ def _load_apply_config(path: Path) -> tuple[ApplyPolicy, tuple[str, ...]]:
     return ApplyPolicy(tuple(protected), tuple(hints)), tuple(raw_templates)
 
 
-def _filtered_template_commit(
-    source: Path,
-    commit: str,
+def _prepared_template_commit(
+    prepared: Path,
     template: str,
     protected: tuple[str, ...],
     temporary: Path,
-    metadata: dict[str, str] | None = None,
-) -> tuple[str, tuple[str, ...]]:
-    treeish = f"{commit}:templates/{template}"
-    try:
-        paths = _output_bytes(
-            ["git", "ls-tree", "-r", "--name-only", "-z", treeish], cwd=source
-        )
-    except subprocess.CalledProcessError as error:
-        raise ApplicationError(
-            f"template snapshot does not exist at {treeish}"
-        ) from error
+) -> tuple[str, tuple[str, ...], Path]:
+    repository = temporary / "prepared.git"
+    _run(["git", "init", "--bare", "--quiet", str(repository)])
+    index = temporary / "prepared.index"
+    environment = os.environ | {
+        "GIT_DIR": str(repository),
+        "GIT_INDEX_FILE": str(index),
+        "GIT_WORK_TREE": str(prepared),
+    }
+    _run(["git", "read-tree", "--empty"], cwd=prepared, env=environment)
+    _run(["git", "add", "--all"], cwd=prepared, env=environment)
+    paths = _output_bytes(
+        ["git", "ls-files", "--cached", "-z"], cwd=prepared, env=environment
+    )
     decoded_paths = tuple(
         path.decode("utf-8") for path in paths.rstrip(b"\0").split(b"\0") if path
     )
@@ -386,32 +570,13 @@ def _filtered_template_commit(
         if "/" not in path
         and any(fnmatch.fnmatchcase(path, pattern) for pattern in protected)
     )
-
-    index = temporary / "template.index"
-    environment = os.environ | {"GIT_INDEX_FILE": str(index)}
-    if metadata is not None:
-        try:
-            TemplateRepository(source).instantiate(
-                template, source / "templates" / template, metadata
-            )
-        except TemplateError as error:
-            raise ApplicationError(f"cannot instantiate {template!r}: {error}") from error
-        environment["GIT_WORK_TREE"] = str(source / "templates" / template)
-        _run(["git", "read-tree", "--empty"], cwd=source, env=environment)
-        _run(
-            ["git", "add", "--sparse", "--all"],
-            cwd=source / "templates" / template,
-            env=environment,
-        )
-    else:
-        _run(["git", "read-tree", treeish], cwd=source, env=environment)
     if skipped:
         _run(
             ["git", "update-index", "--force-remove", "--", *skipped],
-            cwd=source,
+            cwd=prepared,
             env=environment,
         )
-    tree = _output(["git", "write-tree"], cwd=source, env=environment)
+    tree = _output(["git", "write-tree"], cwd=prepared, env=environment)
     commit_environment = environment | {
         "GIT_AUTHOR_EMAIL": "template-tool@localhost",
         "GIT_AUTHOR_NAME": "template-tool",
@@ -420,10 +585,10 @@ def _filtered_template_commit(
     }
     filtered_commit = _output(
         ["git", "commit-tree", tree, "-m", f"Apply {template} template"],
-        cwd=source,
+        cwd=prepared,
         env=commit_environment,
     )
-    return filtered_commit, skipped
+    return filtered_commit, skipped, repository
 
 
 def _run(
@@ -449,10 +614,13 @@ def _output(
     ).stdout.strip()
 
 
-def _output_bytes(command: list[str], cwd: Path) -> bytes:
+def _output_bytes(
+    command: list[str], cwd: Path, env: dict[str, str] | None = None
+) -> bytes:
     return subprocess.run(
         command,
         cwd=cwd,
+        env=env,
         check=True,
         capture_output=True,
     ).stdout

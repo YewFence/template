@@ -47,31 +47,6 @@ jobs:
         run: mise run check
 
 
-
-  actions-version:
-    name: Check Action Versions
-    runs-on: ubuntu-latest
-    env:
-      MISE_TASK_RUN_AUTO_INSTALL: "false"
-      MISE_LOCKED: "1"
-      MISE_ENV: "ci"
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: jdx/mise-action@v4.2.4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          install_args: pinact
-          add_shims_to_path: true
-          cache_key: "mise-actioncheck-{{install_args_hash}}-{{file_hash}}"
-
-      - name: Check Action versions
-        env:
-          PINACT_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: mise -E ci run actions:versions:check
-
   docs:
     name: Docs
     runs-on: ubuntu-latest
@@ -102,3 +77,27 @@ jobs:
 
       - name: Build
         run: mise run docs:build
+
+  actions-version:
+    name: Check Action Versions
+    runs-on: ubuntu-latest
+    env:
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+      MISE_LOCKED: "1"
+      MISE_ENV: "ci"
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@v4.2.4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          install_args: pinact
+          add_shims_to_path: true
+          cache_key: "mise-actioncheck-{{install_args_hash}}-{{file_hash}}"
+
+      - name: Check Action versions
+        env:
+          PINACT_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mise -E ci run actions:versions:check

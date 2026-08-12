@@ -1,0 +1,32 @@
+[tasks.'docs:install']
+description = "Install documentation site dependencies"
+dir = "docs"
+run = "pnpm install"
+
+[tasks.'docs:lock']
+description = "Generate the documentation lockfile without installing dependencies"
+dir = "docs"
+run = "pnpm install --lockfile-only"
+
+[tasks.'docs:install:locked']
+description = "Install documentation dependencies from the committed lockfile"
+dir = "docs"
+run = "pnpm install --frozen-lockfile"
+
+[tasks.'docs:dev']
+description = "Start the VitePress documentation site"
+depends = ["docs:install:locked"]
+dir = "docs"
+run = "pnpm run dev"
+
+[tasks.'docs:build']
+description = "Build the VitePress documentation site"
+depends = ["docs:install:locked"]
+dir = "docs"
+run = "pnpm run build"
+
+[tasks.'docs:preview']
+description = "Preview the VitePress documentation site"
+depends = ["docs:install:locked"]
+dir = "docs"
+run = "pnpm run preview"

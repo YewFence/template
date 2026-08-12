@@ -1,7 +1,7 @@
 # {{PROJECT_NAME}}
 
 [![Release](https://img.shields.io/github/v/release/{{GITHUB_OWNER}}/{{REPO_NAME}}?sort=semver)](https://github.com/{{GITHUB_OWNER}}/{{REPO_NAME}}/releases)
-[![Docs](https://img.shields.io/badge/docs-online-blue)](https://{{GITHUB_OWNER}}.github.io/{{REPO_NAME}}/)
+<$ slot("docs_badge", optional=true) | trim $>
 [![License](https://img.shields.io/github/license/{{GITHUB_OWNER}}/{{REPO_NAME}})](LICENSE)
 
 {{PROJECT_DESCRIPTION}}
@@ -13,39 +13,38 @@
 
 ### Installation
 
-#### Mise
+> [!IMPORTANT]
+> [PLACEHOLDER] Document how users install or access this project.
 
-```bash
-mise use --global github:{{GITHUB_OWNER}}/{{REPO_NAME}}
-```
-
-#### Go
-
-```bash
-go install {{GO_MODULE}}/cmd/{{BINARY_NAME}}@latest
-```
-
-#### Build and install from source locally
+### Build From Source
 
 ```bash
 git clone https://github.com/{{GITHUB_OWNER}}/{{REPO_NAME}}.git
 cd {{REPO_NAME}}
 mise trust
 mise install
-mise run cli:install
+mise run build
 ```
 
 ### Usage
 
+> [!IMPORTANT]
+> [PLACEHOLDER] Add the primary usage examples for this project.
+
+## Development
+
 ```bash
-{{BINARY_NAME}}
-{{BINARY_NAME}} version
+mise run hooks:install
+mise run check
+mise run test
+mise -E ci run audit
 ```
 
-## Documentation
+See the [Contributing Guide](CONTRIBUTING.md) for the complete development workflow.
 
-See the [documentation site](https://{{GITHUB_OWNER}}.github.io/{{REPO_NAME}}) for more information.
+Tagged releases include Linux, macOS, and Windows binary archives.
 
+<$ slot("docs_section", optional=true) $>
 ## Contributing
 
 If you have suggestions or find a bug, please [open an issue](https://github.com/{{GITHUB_OWNER}}/{{REPO_NAME}}/issues).

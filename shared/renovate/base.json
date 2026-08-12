@@ -20,6 +20,7 @@
       "commitMessageTopic": "GitHub Actions"
     },
     {
+      "capability": "docs-site",
       "description": "Keep documentation dependency ranges and compatible lockfiles current.",
       "matchManagers": ["npm"],
       "groupName": "npm dependencies",

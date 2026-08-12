@@ -88,6 +88,12 @@ class RenderResult:
         return not self.differences
 
 
+@dataclass(frozen=True)
+class RenovateConfig:
+    content: bytes
+    capability_effects: frozenset[str]
+
+
 class TemplateRepository:
     """Render and validate all templates behind one small repository interface."""
 
@@ -182,7 +188,7 @@ class TemplateRepository:
             return RenderResult("repository")
         target = self.root / "renovate.json"
         temporary = self.root / f".renovate.json.{uuid.uuid4().hex}"
-        temporary.write_bytes(rendered)
+        temporary.write_bytes(rendered.content)
         temporary.chmod(0o644)
         os.replace(temporary, target)
         return RenderResult("repository")
@@ -194,7 +200,7 @@ class TemplateRepository:
         if rendered is None:
             return RenderResult("repository")
         target = self.root / "renovate.json"
-        expected = TreeEntry("file", False, rendered)
+        expected = TreeEntry("file", False, rendered.content)
         if target.is_symlink() or not target.is_file():
             return RenderResult("repository", ("missing or invalid path: renovate.json",))
         actual = TreeEntry(
@@ -513,7 +519,9 @@ class TemplateRepository:
                         source.output_path, os.readlink(source.source_path)
                     )
             renovate = self._render_renovate_config(
-                overlay_root / "fragments" / "renovate" / "profile.json"
+                overlay_root / "fragments" / "renovate" / "profile.json",
+                declared_capabilities=frozenset(profile.capabilities),
+                enabled_capabilities=enabled_capabilities,
             )
             renovate_path = PurePosixPath("renovate.json")
             if renovate is not None and renovate_path in sources:
@@ -523,7 +531,11 @@ class TemplateRepository:
             output_paths = set(sources)
             if renovate is not None:
                 output_paths.add(renovate_path)
-            self._validate_capability_contract(profile, output_paths)
+            self._validate_capability_contract(
+                profile,
+                output_paths,
+                renovate.capability_effects if renovate is not None else frozenset(),
+            )
             all_capabilities = frozenset(profile.capabilities)
             for source in sources.values():
                 if source.kind == "layout":
@@ -552,7 +564,7 @@ class TemplateRepository:
                 profile, renovate_path, enabled_capabilities
             ):
                 destination = staged / "renovate.json"
-                destination.write_bytes(renovate)
+                destination.write_bytes(renovate.content)
                 destination.chmod(0o644)
 
             unused_bindings = set(profile.slots) - {
@@ -570,10 +582,12 @@ class TemplateRepository:
 
     @staticmethod
     def _validate_capability_contract(
-        profile: TemplateProfile, output_paths: set[PurePosixPath]
+        profile: TemplateProfile,
+        output_paths: set[PurePosixPath],
+        additional_effects: frozenset[str] = frozenset(),
     ) -> None:
         matched_outputs: dict[PurePosixPath, list[tuple[str, PurePosixPath]]] = {}
-        effects = {
+        effects = set(additional_effects) | {
             binding.capability
             for bindings in profile.slots.values()
             for binding in bindings.values()
@@ -626,16 +640,73 @@ class TemplateRepository:
                     return capability in enabled_capabilities
         return True
 
-    def _render_renovate_config(self, profile_path: Path) -> bytes | None:
+    def _render_renovate_config(
+        self,
+        profile_path: Path,
+        *,
+        declared_capabilities: frozenset[str] = frozenset(),
+        enabled_capabilities: frozenset[str] = frozenset(),
+    ) -> RenovateConfig | None:
         base_path = self.shared_root / "renovate" / "base.json"
         if not base_path.exists():
             return None
         base = self._load_json_object(base_path, "Renovate base")
         profile = self._load_json_object(profile_path, "Renovate profile")
-        base_rules = base.pop("packageRules", [])
+        raw_contributions = profile.pop("capabilityContributions", {})
+        if not isinstance(raw_contributions, dict):
+            raise TemplateError(
+                f"Renovate capabilityContributions must be an object: {profile_path}"
+            )
+        raw_base_rules = base.pop("packageRules", [])
+        rule_effects = {
+            capability
+            for rule in raw_base_rules
+            if isinstance(rule, dict)
+            for capability in (rule.get("capability"),)
+            if isinstance(capability, str)
+        }
+        base_rules = self._select_renovate_rules(
+            raw_base_rules,
+            base_path,
+            declared_capabilities,
+            enabled_capabilities,
+        )
         profile_rules = profile.pop("packageRules", [])
-        self._validate_package_rules(base_rules, base_path)
         self._validate_package_rules(profile_rules, profile_path)
+        owned_managers: dict[str, str] = {}
+        contribution_rules: list[object] = []
+        for capability, contribution in raw_contributions.items():
+            if capability not in declared_capabilities:
+                raise TemplateError(
+                    f"Renovate contribution references undeclared capability: {capability}"
+                )
+            if not isinstance(contribution, dict):
+                raise TemplateError(
+                    f"Renovate contribution {capability} must be an object: {profile_path}"
+                )
+            unknown = set(contribution) - {"enabledManagers", "packageRules"}
+            if unknown:
+                keys = ", ".join(sorted(unknown))
+                raise TemplateError(
+                    f"Renovate contribution {capability} has unknown keys: {keys}"
+                )
+            managers = contribution.get("enabledManagers", [])
+            if not isinstance(managers, list) or not all(
+                isinstance(manager, str) and manager for manager in managers
+            ):
+                raise TemplateError(
+                    f"Renovate contribution {capability}.enabledManagers must be an array of strings"
+                )
+            rules = contribution.get("packageRules", [])
+            self._validate_package_rules(rules, profile_path)
+            for manager in managers:
+                previous = owned_managers.setdefault(manager, capability)
+                if previous != capability:
+                    raise TemplateError(
+                        f"Renovate manager {manager} is owned by multiple capabilities"
+                    )
+            if capability in enabled_capabilities:
+                contribution_rules.extend(rules)
         duplicated = set(base) & set(profile)
         if duplicated:
             keys = ", ".join(sorted(duplicated))
@@ -643,9 +714,35 @@ class TemplateRepository:
                 f"Renovate base and profile duplicate top-level keys: {keys}"
             )
         rendered = base | profile
-        if base_rules or profile_rules:
-            rendered["packageRules"] = [*base_rules, *profile_rules]
-        return (json.dumps(rendered, indent=2, ensure_ascii=False) + "\n").encode()
+        if owned_managers:
+            enabled_managers = rendered.get("enabledManagers", [])
+            if not isinstance(enabled_managers, list) or not all(
+                isinstance(manager, str) for manager in enabled_managers
+            ):
+                raise TemplateError(
+                    f"Renovate enabledManagers must be an array of strings: {profile_path}"
+                )
+            missing = set(owned_managers) - set(enabled_managers)
+            if missing:
+                managers = ", ".join(sorted(missing))
+                raise TemplateError(
+                    f"Renovate capability-owned managers are not enabled by the profile: {managers}"
+                )
+            rendered["enabledManagers"] = [
+                manager
+                for manager in enabled_managers
+                if owned_managers.get(manager) in {None, *enabled_capabilities}
+            ]
+        if base_rules or profile_rules or contribution_rules:
+            rendered["packageRules"] = [
+                *base_rules,
+                *profile_rules,
+                *contribution_rules,
+            ]
+        content = (json.dumps(rendered, indent=2, ensure_ascii=False) + "\n").encode()
+        return RenovateConfig(
+            content, frozenset(raw_contributions) | frozenset(rule_effects)
+        )
 
     @staticmethod
     def _load_json_object(path: Path, label: str) -> dict[str, object]:
@@ -663,6 +760,35 @@ class TemplateRepository:
             isinstance(rule, dict) for rule in rules
         ):
             raise TemplateError(f"packageRules must be an array of objects: {path}")
+
+    def _select_renovate_rules(
+        self,
+        rules: object,
+        path: Path,
+        declared_capabilities: frozenset[str],
+        enabled_capabilities: frozenset[str],
+    ) -> list[dict[str, object]]:
+        self._validate_package_rules(rules, path)
+        selected: list[dict[str, object]] = []
+        for rule in rules:
+            capability = rule.get("capability")
+            if capability is None:
+                selected.append(dict(rule))
+                continue
+            if not isinstance(capability, str) or not capability:
+                raise TemplateError(
+                    f"Renovate package rule capability must be a non-empty string: {path}"
+                )
+            if declared_capabilities and capability not in declared_capabilities:
+                raise TemplateError(
+                    f"Renovate package rule references undeclared capability: {capability}"
+                )
+            if declared_capabilities and capability not in enabled_capabilities:
+                continue
+            selected.append(
+                {key: value for key, value in rule.items() if key != "capability"}
+            )
+        return selected
 
     def _select_sources(
         self, profile: TemplateProfile, overlay_root: Path

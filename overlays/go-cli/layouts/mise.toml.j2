@@ -6,10 +6,7 @@ minimum_release_age = "3d"
 [tools]
 # https://go.dev/
 go = "1"
-# https://nodejs.org/
-node = "26"
-# https://pnpm.io/
-pnpm = "11"
+<$ slot("docs_tools", optional=true) | trim $>
 # https://golangci-lint.run/
 golangci-lint = "2"
 # https://github.com/suzuki-shunsuke/nllint
@@ -116,6 +113,8 @@ run = 'go install -trimpath -ldflags="-X main.version=${BUILD_VERSION:-dev}" ./c
 description = "Build the CLI executable"
 run = 'go build -trimpath -ldflags="-s -w -X main.version=${BUILD_VERSION:-dev}" -o "${BUILD_OUTPUT_DIR:-bin}/" ./cmd/{{BINARY_NAME}}'
 
+<$ slot("docs_tasks", optional=true) | trim $>
+
 [tasks."build:check"]
 description = "Check whether the CLI builds"
 run = "go test -run '^$' ./cmd/..."
@@ -132,36 +131,3 @@ run = "pinact run --update"
 [tasks.'actions:pin-offline:check']
 description = "Check GitHub Action versions and pin to commit hashes"
 run = "unset PINACT_MIN_AGE && pinact run --fix=false --no-api"
-
-[tasks.'docs:install']
-description = "Install documentation site dependencies"
-dir = "docs"
-run = "pnpm install"
-
-[tasks.'docs:lock']
-description = "Generate the documentation lockfile without installing dependencies"
-dir = "docs"
-run = "pnpm install --lockfile-only"
-
-[tasks.'docs:install:locked']
-description = "Install documentation dependencies from the committed lockfile"
-dir = "docs"
-run = "pnpm install --frozen-lockfile"
-
-[tasks.'docs:dev']
-description = "Start the VitePress documentation site"
-depends = ["docs:install:locked"]
-dir = "docs"
-run = "pnpm run dev"
-
-[tasks.'docs:build']
-description = "Build the VitePress documentation site"
-depends = ["docs:install:locked"]
-dir = "docs"
-run = "pnpm run build"
-
-[tasks.'docs:preview']
-description = "Preview the VitePress documentation site"
-depends = ["docs:install:locked"]
-dir = "docs"
-run = "pnpm run preview"

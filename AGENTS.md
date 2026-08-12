@@ -22,7 +22,7 @@
 - `overlays/<name>/static/`：单个模板拥有的文件。
 - `overlays/<name>/fragments/`：单个模板提供的 adapter fragment。
 - `overlays/<name>/mise.toml`：只供 monorepo staging validation 使用，不进入 template deliverable。
-- `templates/<name>/`：renderer 生成的完整、自包含快照。
+- `templates/<name>/`：renderer 生成的完整、自包含默认 capability 集合 preview。
 - `templates.toml`：render、slot、project instantiation 和 apply profile 的共享合同。
 - `tools/template-tool/`：renderer、staging validation、project instantiation 和 Git apply 实现。
 - `scripts/apply-template`：没有 uv 时使用的 best-effort Bash fallback，不是首选入口。
@@ -31,6 +31,8 @@
 ## 修改规则
 
 不要直接编辑 `templates/<name>/`。共享行为改在 `shared/`，模板专属行为改在对应 `overlays/<name>/`，然后通过 renderer 重新生成快照。
+
+Template capability 属于 template profile 合同，不是 project identity metadata。Capability-owned output 与 conditional/variant slot binding 声明在 `templates.toml` 中；不要把 capability 条件散入 Jinja、source 目录名称或 Python 的 template-name 分支。只提交默认 capability 集合的 preview，非默认组合由 disposable staging 验证，不生成额外 snapshot。
 
 只有多个模板确实共享稳定行为时，才把内容提升到 `shared/`。layout 的 slot 必须按行为语义命名；不要创建按文本位置、step 序号或模板名称划分的通用插入点。Go、Rust 和 common 的真实工具、缓存、审计、版本文件和构建矩阵差异应保留为 overlay adapter，必要时保留完整实现。
 
@@ -58,7 +60,7 @@ mise run check [template]
 
 - `render` 重新生成一个或全部模板快照。
 - `sync:check` 只读验证来源和未实例化快照同步。
-- `check` 创建 disposable staging，复用正式 project instantiation，调用对应 validation adapter 生成临时状态，再运行模板自己的完整检查。
+- `check` 为适用 capabilities 展开完整布尔组合，创建 disposable staging，复用 `init-project`、`apply-template` 共用的模板准备内核与正式 project instantiation，调用对应 validation adapter 生成临时状态，再运行模板自己的完整检查。
 
 修改 `tools/template-tool/` 后，至少运行：
 

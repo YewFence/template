@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -10,10 +12,13 @@ from unittest import mock
 
 from template_tool.application import (
     ApplicationError,
+    apply_selected_template,
     apply_template,
     initialize_project,
+    select_template,
 )
-from template_tool.cli import apply_main, init_main
+from template_tool.bootstrap import capabilities_main as bootstrap_capabilities_main
+from template_tool.cli import apply_main, capabilities_main, init_main, main
 
 
 class ApplyTemplateTest(unittest.TestCase):
@@ -50,6 +55,7 @@ class ApplyTemplateTest(unittest.TestCase):
         self._configure_identity(self.source)
         (self.source / "tools/template-tool").mkdir(parents=True)
         (self.source / "scripts").mkdir()
+        (self.source / "overlays/example/static").mkdir(parents=True)
         (self.source / "templates/example").mkdir(parents=True)
         (self.source / "tools/template-tool/README").write_text("tool\n")
         (self.source / "scripts/apply-template").write_text("launcher\n")
@@ -59,6 +65,11 @@ class ApplyTemplateTest(unittest.TestCase):
             'protected = [".gitignore", "AGENTS.*", "LICENSE*"]\n'
             'hints = ["Review protected files manually."]\n'
             "[templates.example.capabilities]\n"
+            "docs-site = false\n"
+            "release = false\n"
+            "[templates.example.capability_outputs]\n"
+            'docs-site = ["docs.txt"]\n'
+            'release = ["release.txt"]\n'
             "[templates.example.instantiation]\n"
             'required = ["project_name", "binary_name"]\n'
             "[templates.example.instantiation.tokens]\n"
@@ -72,15 +83,21 @@ class ApplyTemplateTest(unittest.TestCase):
             'binary_name = "validation-project"\n',
             encoding="utf-8",
         )
-        (self.source / "templates/example/.gitignore").write_text("template-cache/\n")
-        (self.source / "templates/example/AGENTS.md").write_text("template agents\n")
-        (self.source / "templates/example/LICENSE").write_text("template license\n")
-        (self.source / "templates/example/project.toml").write_text(
+        source_root = self.source / "overlays/example/static"
+        (source_root / ".gitignore").write_text("template-cache/\n")
+        (source_root / "AGENTS.md").write_text("template agents\n")
+        (source_root / "LICENSE").write_text("template license\n")
+        (source_root / "docs.txt").write_text("documentation\n")
+        (source_root / "release.txt").write_text("release\n")
+        (source_root / "project.toml").write_text(
             'name = {{PROJECT_NAME_JSON}}\nenabled = true\n'
         )
-        command = self.source / "templates/example/cmd/{{BINARY_NAME}}/main.txt"
+        command = source_root / "cmd/{{BINARY_NAME}}/main.txt"
         command.parent.mkdir(parents=True)
         command.write_text("{{PROJECT_NAME}}\n", encoding="utf-8")
+        (self.source / "templates/example/preview-only.txt").write_text(
+            "stale preview\n", encoding="utf-8"
+        )
         self._git(self.source, "add", "--all")
         self._git(self.source, "commit", "--quiet", "-m", "template fixture")
 
@@ -130,6 +147,7 @@ class ApplyTemplateTest(unittest.TestCase):
             self._git(self.target, "diff", "--cached", "--name-only", capture=True),
             "cmd/{{BINARY_NAME}}/main.txt\nproject.toml",
         )
+        self.assertFalse((self.target / "preview-only.txt").exists())
         self.assertEqual(self._git(self.target, "rev-parse", "HEAD", capture=True), head)
         self.assertFalse((self.target / ".git/MERGE_HEAD").exists())
 
@@ -161,6 +179,7 @@ class ApplyTemplateTest(unittest.TestCase):
             self._git(self.target, "diff", "--cached", "--name-only", capture=True),
             "cmd/applied-project/main.txt\nproject.toml",
         )
+        self.assertFalse((self.target / "preview-only.txt").exists())
 
     def test_apply_requires_complete_metadata_unless_keep_tokens(self) -> None:
         self._init_target()
@@ -196,9 +215,22 @@ class ApplyTemplateTest(unittest.TestCase):
 
         self.assertFalse(self._git(self.target, "status", "--porcelain", capture=True))
 
+    def test_selected_source_checkout_stays_unchanged_while_preparing_application(self) -> None:
+        self._init_target()
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = Path(temporary)
+            with select_template(str(self.source), "main", temporary_root) as selected:
+                before = self._git(selected.source, "count-objects", "-v", capture=True)
+                apply_selected_template(
+                    selected, "example", self.target, keep_tokens=True
+                )
+                after = self._git(selected.source, "count-objects", "-v", capture=True)
+
+        self.assertEqual(after, before)
+
     def test_conflict_preserves_index_can_be_cancelled_and_resolved(self) -> None:
-        (self.source / "templates/example/README.md").write_text("template\n")
-        self._git(self.source, "add", "templates/example/README.md")
+        (self.source / "overlays/example/static/README.md").write_text("template\n")
+        self._git(self.source, "add", "overlays/example/static/README.md")
         self._git(self.source, "commit", "--quiet", "-m", "add template readme")
         head = self._init_target({"README.md": "target\n"})
 
@@ -278,8 +310,8 @@ class ApplyTemplateTest(unittest.TestCase):
         collect_metadata.assert_not_called()
 
     def test_cli_returns_nonzero_and_prints_conflict_recovery_hints(self) -> None:
-        (self.source / "templates/example/README.md").write_text("template\n")
-        self._git(self.source, "add", "templates/example/README.md")
+        (self.source / "overlays/example/static/README.md").write_text("template\n")
+        self._git(self.source, "add", "overlays/example/static/README.md")
         self._git(self.source, "commit", "--quiet", "-m", "add template readme")
         self._init_target({"README.md": "target\n"})
         stdout = StringIO()
@@ -296,12 +328,17 @@ class ApplyTemplateTest(unittest.TestCase):
                         "main",
                         "--template",
                         "example",
+                        "--enable-capability",
+                        "release",
+                        "--enable-capability",
+                        "docs-site",
                         "--keep-tokens",
                     ]
                 )
 
         self.assertEqual(exit_context.exception.code, 1)
         self.assertIn("Template-Commit:", stdout.getvalue())
+        self.assertIn("Capabilities: docs-site, release", stdout.getvalue())
         self.assertIn("git status", stdout.getvalue())
         self.assertIn("git diff --check", stdout.getvalue())
         self.assertIn("git reset --hard HEAD", stdout.getvalue())
@@ -331,11 +368,312 @@ class ApplyTemplateTest(unittest.TestCase):
         self.assertIn("cannot be combined", stderr.getvalue())
         self.assertFalse(self._git(self.target, "status", "--porcelain", capture=True))
 
-    def test_init_project_creates_initial_commit_and_stages_template(self) -> None:
-        workflow = self.source / "templates/example/.github/workflows/ci.yml"
+    def test_apply_cli_disables_default_capability_without_deleting_target_content(
+        self,
+    ) -> None:
+        config = (self.source / "templates.toml").read_text(encoding="utf-8")
+        enabled_by_default = config.replace(
+            "docs-site = false\n", "docs-site = true\n"
+        )
+        self.assertNotEqual(enabled_by_default, config)
+        (self.source / "templates.toml").write_text(
+            enabled_by_default,
+            encoding="utf-8",
+        )
+        self._git(self.source, "add", "templates.toml")
+        self._git(self.source, "commit", "--quiet", "-m", "enable docs by default")
+        head = self._init_target(
+            {
+                ".gitignore": "target-cache/\n",
+                "AGENTS.md": "target agents\n",
+                "LICENSE": "target license\n",
+                "docs.txt": "target documentation\n",
+            }
+        )
+        stdout = StringIO()
+
+        with redirect_stdout(stdout):
+            apply_main(
+                [
+                    str(self.target),
+                    "--repo",
+                    str(self.source),
+                    "--ref",
+                    "main",
+                    "--template",
+                    "example",
+                    "--enable-capability",
+                    "release",
+                    "--enable-capability",
+                    "release",
+                    "--disable-capability",
+                    "docs-site",
+                    "--keep-tokens",
+                ]
+            )
+
+        self.assertIn("Capabilities: release\n", stdout.getvalue())
+        self.assertIn(
+            "HINT: skipped protected root paths: .gitignore, AGENTS.md, LICENSE",
+            stdout.getvalue(),
+        )
+        self.assertTrue((self.target / "release.txt").is_file())
+        self.assertIn(
+            "{{PROJECT_NAME_JSON}}",
+            (self.target / "project.toml").read_text(encoding="utf-8"),
+        )
+        self.assertEqual(
+            (self.target / "docs.txt").read_text(encoding="utf-8"),
+            "target documentation\n",
+        )
+        self.assertEqual((self.target / ".gitignore").read_text(), "target-cache/\n")
+        self.assertEqual((self.target / "AGENTS.md").read_text(), "target agents\n")
+        self.assertEqual((self.target / "LICENSE").read_text(), "target license\n")
+        self.assertEqual(
+            self._git(self.target, "diff", "--cached", "--name-only", capture=True),
+            "cmd/{{BINARY_NAME}}/main.txt\nproject.toml\nrelease.txt",
+        )
+        self.assertEqual(self._git(self.target, "rev-parse", "HEAD", capture=True), head)
+        self.assertFalse((self.target / ".git/MERGE_HEAD").exists())
+
+    def test_apply_cli_rejects_unknown_and_conflicting_capability_overrides_before_mutation(self) -> None:
+        self._init_target()
+        for overrides, message in (
+            (("--enable-capability", "unknown"), "not applicable"),
+            (
+                (
+                    "--enable-capability",
+                    "release",
+                    "--disable-capability",
+                    "release",
+                ),
+                "both enabled and disabled",
+            ),
+        ):
+            with self.subTest(overrides=overrides):
+                stderr = StringIO()
+
+                with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+                    apply_main(
+                        [
+                            str(self.target),
+                            "--repo",
+                            str(self.source),
+                            "--ref",
+                            "main",
+                            "--template",
+                            "example",
+                            *overrides,
+                            "--keep-tokens",
+                        ]
+                    )
+
+                self.assertEqual(raised.exception.code, 1)
+                self.assertIn(message, stderr.getvalue())
+                self.assertFalse(
+                    self._git(self.target, "status", "--porcelain", capture=True)
+                )
+
+    @mock.patch("template_tool.cli.questionary.text")
+    @mock.patch("template_tool.cli.questionary.confirm")
+    def test_init_interactive_orders_capabilities_metadata_and_single_summary_confirmation(
+        self, confirm: mock.Mock, text: mock.Mock
+    ) -> None:
+        subprocess.run(
+            ["git", "init", "--quiet", "--initial-branch=main", str(self.target)],
+            check=True,
+        )
+        self._configure_identity(self.target)
+        events: list[str] = []
+        confirmation_answers = iter((True, True))
+        metadata_answers = iter(("Interactive Project", "interactive-project"))
+
+        def confirm_prompt(message: str, *, default: bool) -> mock.Mock:
+            events.append(f"confirm:{message}")
+            return mock.Mock(ask=mock.Mock(return_value=next(confirmation_answers)))
+
+        def text_prompt(message: str) -> mock.Mock:
+            events.append(f"text:{message}")
+            return mock.Mock(ask=mock.Mock(return_value=next(metadata_answers)))
+
+        confirm.side_effect = confirm_prompt
+        text.side_effect = text_prompt
+        stdout = StringIO()
+
+        with redirect_stdout(stdout):
+            init_main(
+                [
+                    str(self.target),
+                    "--repo",
+                    str(self.source),
+                    "--ref",
+                    "main",
+                    "--template",
+                    "example",
+                    "--enable-capability",
+                    "release",
+                    "--interactive",
+                ]
+            )
+
+        self.assertEqual(
+            [event.split(":", 1)[0] for event in events],
+            ["confirm", "text", "text", "confirm"],
+        )
+        self.assertIn("docs-site", events[0])
+        self.assertNotIn("release", events[0])
+        self.assertIn("Template: example", events[-1])
+        self.assertIn("Capabilities: docs-site, release", events[-1])
+        self.assertIn("Capabilities: docs-site, release\n", stdout.getvalue())
+
+    @mock.patch("template_tool.cli.questionary.text")
+    @mock.patch("template_tool.cli.questionary.confirm")
+    def test_apply_keep_tokens_interactive_only_prompts_for_capabilities(
+        self, confirm: mock.Mock, text: mock.Mock
+    ) -> None:
+        self._init_target()
+        confirm.side_effect = (
+            mock.Mock(ask=mock.Mock(return_value=False)),
+            mock.Mock(ask=mock.Mock(return_value=True)),
+        )
+        stdout = StringIO()
+
+        with redirect_stdout(stdout):
+            apply_main(
+                [
+                    str(self.target),
+                    "--repo",
+                    str(self.source),
+                    "--ref",
+                    "main",
+                    "--template",
+                    "example",
+                    "--enable-capability",
+                    "release",
+                    "--interactive",
+                    "--keep-tokens",
+                ]
+            )
+
+        text.assert_not_called()
+        self.assertEqual(confirm.call_count, 2)
+        self.assertIn("Capabilities: release\n", stdout.getvalue())
+        self.assertIn("{{PROJECT_NAME_JSON}}", (self.target / "project.toml").read_text())
+        self.assertTrue((self.target / "release.txt").is_file())
+
+    def test_capability_discovery_text_and_json_do_not_require_or_mutate_repository(self) -> None:
+        current = self.root / "current"
+        current.mkdir()
+        sentinel = current / "sentinel.txt"
+        sentinel.write_text("unchanged\n", encoding="utf-8")
+        commit = self._git(self.source, "rev-parse", "HEAD", capture=True)
+        original_cwd = Path.cwd()
+        text_output = StringIO()
+        json_output = StringIO()
+        try:
+            os.chdir(current)
+            with redirect_stdout(text_output):
+                capabilities_main(
+                    [
+                        "--repo",
+                        str(self.source),
+                        "--ref",
+                        "main",
+                        "--template",
+                        "example",
+                    ]
+                )
+            with redirect_stdout(json_output):
+                main(
+                    [
+                        "capabilities",
+                        "--repo",
+                        str(self.source),
+                        "--ref",
+                        "main",
+                        "--template",
+                        "example",
+                        "--json",
+                        "--source-checkout",
+                        str(self.source),
+                    ]
+                )
+        finally:
+            os.chdir(original_cwd)
+
+        self.assertEqual(
+            text_output.getvalue(),
+            f"Repository: {self.source}\n"
+            "Template: example\n"
+            "Ref: main\n"
+            f"Template-Commit: {commit}\n"
+            "Capability: docs-site (default: disabled)\n"
+            "Capability: release (default: disabled)\n",
+        )
+        self.assertEqual(
+            json.loads(json_output.getvalue()),
+            {
+                "repository": str(self.source),
+                "ref": "main",
+                "commit": commit,
+                "template": "example",
+                "capabilities": [
+                    {"name": "docs-site", "default_enabled": False},
+                    {"name": "release", "default_enabled": False},
+                ],
+            },
+        )
+        self.assertEqual(tuple(current.iterdir()), (sentinel,))
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "unchanged\n")
+
+    @mock.patch("template_tool.bootstrap._run_selected_engine")
+    def test_capability_discovery_bootstrap_uses_selected_ref_engine(
+        self, run_selected_engine: mock.Mock
+    ) -> None:
+        arguments = ["--ref", "main", "--template", "example", "--json"]
+
+        bootstrap_capabilities_main(arguments)
+
+        run_selected_engine.assert_called_once_with(
+            "capabilities", arguments, capabilities_main
+        )
+
+    @mock.patch("template_tool.bootstrap.capabilities_main")
+    def test_umbrella_capability_discovery_uses_selected_ref_engine(
+        self, run_selected_capabilities: mock.Mock
+    ) -> None:
+        main(
+            [
+                "capabilities",
+                "--repo",
+                str(self.source),
+                "--ref",
+                "main",
+                "--template",
+                "example",
+                "--json",
+            ]
+        )
+
+        run_selected_capabilities.assert_called_once_with(
+            [
+                "--repo",
+                str(self.source),
+                "--ref",
+                "main",
+                "--template",
+                "example",
+                "--json",
+            ]
+        )
+
+    def test_init_cli_selects_non_default_capabilities_before_staging_template(
+        self,
+    ) -> None:
+        workflow = self.source / "overlays/example/static/.github/workflows/ci.yml"
         workflow.parent.mkdir(parents=True)
         workflow.write_text("name: CI\n", encoding="utf-8")
-        self._git(self.source, "add", "templates/example/.github/workflows/ci.yml")
+        self._git(self.source, "add", "overlays/example/static/.github/workflows/ci.yml")
         self._git(self.source, "commit", "--quiet", "-m", "add nested template path")
         subprocess.run(
             ["git", "init", "--quiet", "--initial-branch=main", str(self.target)],
@@ -358,12 +696,17 @@ class ApplyTemplateTest(unittest.TestCase):
                     "Initialized Project",
                     "--binary-name",
                     "initialized-project",
+                    "--enable-capability",
+                    "release",
+                    "--enable-capability",
+                    "docs-site",
                 ]
             )
 
         output = stdout.getvalue()
         self.assertIn("Initial-Commit:", output)
         self.assertIn("Template-Commit:", output)
+        self.assertIn("Capabilities: docs-site, release", output)
         self.assertNotIn("Protected project identity", output)
         self.assertEqual(
             self._git(self.target, "rev-list", "--parents", "-n", "1", "HEAD", capture=True),
@@ -371,7 +714,10 @@ class ApplyTemplateTest(unittest.TestCase):
         )
         self.assertEqual(
             self._git(self.target, "diff", "--cached", "--name-only", capture=True),
-            ".github/workflows/ci.yml\n.gitignore\nAGENTS.md\nLICENSE\ncmd/initialized-project/main.txt\nproject.toml",
+            ".github/workflows/ci.yml\n.gitignore\nAGENTS.md\nLICENSE\ncmd/initialized-project/main.txt\ndocs.txt\nproject.toml\nrelease.txt",
+        )
+        self.assertFalse(
+            self._git(self.target, "ls-tree", "-r", "--name-only", "HEAD", capture=True)
         )
         self.assertIn("Initialized Project", (self.target / "project.toml").read_text())
         for protected in (".gitignore", "AGENTS.md", "LICENSE"):
@@ -414,6 +760,40 @@ class ApplyTemplateTest(unittest.TestCase):
             capture_output=True,
         )
         self.assertNotEqual(completed.returncode, 0)
+
+    def test_init_project_keeps_target_unborn_when_source_preparation_fails(self) -> None:
+        config = (self.source / "templates.toml").read_text(encoding="utf-8")
+        (self.source / "templates.toml").write_text(
+            config.replace(
+                "[templates.example.capabilities]\n",
+                "[templates.example.capabilities]\nDocs-Site = true\n",
+            ),
+            encoding="utf-8",
+        )
+        self._git(self.source, "add", "templates.toml")
+        self._git(self.source, "commit", "--quiet", "-m", "break source contract")
+        subprocess.run(
+            ["git", "init", "--quiet", "--initial-branch=main", str(self.target)],
+            check=True,
+        )
+        self._configure_identity(self.target)
+
+        with self.assertRaisesRegex(ApplicationError, "invalid capability name"):
+            initialize_project(
+                str(self.source),
+                "main",
+                "example",
+                self.target,
+                {"project_name": "Example", "binary_name": "example"},
+            )
+
+        completed = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=self.target,
+            capture_output=True,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertFalse(self._git(self.target, "status", "--porcelain", capture=True))
 
     @mock.patch("template_tool.cli.questionary.confirm")
     @mock.patch("template_tool.cli.questionary.text")

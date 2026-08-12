@@ -38,6 +38,7 @@ jobs:
         run: mise run check
 
 <$ slot("crates_io_package_check", optional=true) $>
+<$ slot("docs_job", optional=true) | trim | indent(2, true) $>
 
   actions-version:
     name: Check Action Versions
@@ -62,34 +63,3 @@ jobs:
         env:
           PINACT_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: mise -E ci run actions:versions:check
-
-  docs:
-    name: Docs
-    runs-on: ubuntu-latest
-    env:
-      MISE_TASK_RUN_AUTO_INSTALL: "false"
-      MISE_LOCKED: "1"
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: jdx/mise-action@v4.2.4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          add_shims_to_path: true
-          cache_key: "mise-docs-{{file_hash}}"
-
-      - name: Resolve pnpm store path
-        id: pnpm-store
-        run: echo "path=$(pnpm store path --silent)" >> "${GITHUB_OUTPUT}"
-
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-${{ runner.os }}-${{ hashFiles('docs/pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-${{ runner.os }}-
-
-      - name: Build
-        run: mise run docs:build

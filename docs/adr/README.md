@@ -7,3 +7,4 @@
 3. [使用语义 slot 和 overlay adapter 表达模板差异](0003-use-semantic-slots-and-overlay-adapters.md)
 4. [交付未引导模板并使用临时 staging 验证](0004-deliver-unbootstrapped-template-blueprints.md)
 5. [分离项目初始化与已有仓库模板应用](0005-separate-project-initialization-from-template-application.md)
+6. [使用声明式 template capability profile 和 ref-owned renderer](0006-use-declarative-template-capability-profiles-and-ref-owned-renderer.md)

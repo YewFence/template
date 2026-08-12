@@ -1,0 +1,13 @@
+<% set docs_ignored_paths = slot("docs_ignored_paths", optional=true) %><% if docs_ignored_paths %><$ docs_ignored_paths | trim $>
+
+<% endif %>/target/
+/dist/
+/coverage/
+
+.codex
+.claude
+
+.env
+.env.local
+
+mise.local.toml

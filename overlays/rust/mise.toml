@@ -4,17 +4,115 @@ usage = '''
 arg "<template_root>" help="Staging template root"
 '''
 run = '''
-if git -C "{{ usage.template_root }}" grep -nE '(rust-template|rust_template|README\.template\.md|AGENTS\.template\.md)' -- .; then
+enabled_capabilities="${TEMPLATE_TOOL_ENABLED_CAPABILITIES:?TEMPLATE_TOOL_ENABLED_CAPABILITIES is required}"
+case "${enabled_capabilities}" in
+  '[]')
+    docs_site_enabled=false
+    crates_io_publish_enabled=false
+    ;;
+  '["docs-site"]')
+    docs_site_enabled=true
+    crates_io_publish_enabled=false
+    ;;
+  '["crates-io-publish"]')
+    docs_site_enabled=false
+    crates_io_publish_enabled=true
+    ;;
+  '["crates-io-publish","docs-site"]')
+    docs_site_enabled=true
+    crates_io_publish_enabled=true
+    ;;
+  *)
+    echo "unexpected Rust capability set: ${enabled_capabilities}" >&2
+    exit 1
+    ;;
+esac
+
+template_root="{{ usage.template_root }}"
+if git -C "${template_root}" grep -nE '(rust-template|rust_template|README\.template\.md|AGENTS\.template\.md)' -- .; then
   echo "legacy Rust identity remains in staging" >&2
   exit 1
 fi
+
+task_names="$(mise -C "${template_root}" tasks ls --local --name-only)"
+ci_task_names="$(mise -C "${template_root}" -E ci tasks ls --local --name-only)"
+if ${docs_site_enabled}; then
+  for task in docs:install docs:lock docs:install:locked docs:dev docs:build docs:preview; do
+    if ! printf '%s\n' "${task_names}" | grep -Fxq "${task}"; then
+      echo "docs-site enabled but mise task is missing: ${task}" >&2
+      exit 1
+    fi
+  done
+  for tool in node pnpm; do
+    if ! grep -Eq "^${tool}[[:space:]]*=" "${template_root}/mise.toml"; then
+      echo "docs-site enabled but mise tool is missing: ${tool}" >&2
+      exit 1
+    fi
+  done
+  if [[ ! -d "${template_root}/docs" || ! -f "${template_root}/docs/package.json" || ! -f "${template_root}/.github/workflows/docs.yml" ]]; then
+    echo "docs-site enabled but complete outputs are missing" >&2
+    exit 1
+  fi
+  if ! grep -Eq '^  docs:$' "${template_root}/.github/workflows/ci.yml" ||
+     ! grep -Fq 'run: mise run docs:build' "${template_root}/.github/workflows/ci.yml"; then
+    echo "docs-site enabled but CI docs job is missing" >&2
+    exit 1
+  fi
+else
+  if printf '%s\n' "${task_names}" | grep -Eq '^docs:'; then
+    echo "docs-site disabled but mise docs tasks remain" >&2
+    exit 1
+  fi
+  for tool in node pnpm; do
+    if grep -Eq "^${tool}[[:space:]]*=" "${template_root}/mise.toml"; then
+      echo "docs-site disabled but mise tool remains: ${tool}" >&2
+      exit 1
+    fi
+  done
+  if [[ -e "${template_root}/docs" || -e "${template_root}/.github/workflows/docs.yml" ]]; then
+    echo "docs-site disabled but complete outputs remain" >&2
+    exit 1
+  fi
+  if grep -Eq '^  docs:$' "${template_root}/.github/workflows/ci.yml" ||
+     grep -Fq 'run: mise run docs:build' "${template_root}/.github/workflows/ci.yml"; then
+    echo "docs-site disabled but CI docs job remains" >&2
+    exit 1
+  fi
+fi
+
+if ${crates_io_publish_enabled}; then
+  if ! printf '%s\n' "${ci_task_names}" | grep -Fxq 'crates-io:package:check'; then
+    echo "crates-io-publish enabled but package check task is missing" >&2
+    exit 1
+  fi
+  if ! grep -Fq 'run: mise -E ci run crates-io:package:check' "${template_root}/.github/workflows/ci.yml"; then
+    echo "crates-io-publish enabled but CI package check step is missing" >&2
+    exit 1
+  fi
+else
+  if printf '%s\n' "${ci_task_names}" | grep -Fxq 'crates-io:package:check'; then
+    echo "crates-io-publish disabled but package check task remains" >&2
+    exit 1
+  fi
+  if grep -Fq 'run: mise -E ci run crates-io:package:check' "${template_root}/.github/workflows/ci.yml"; then
+    echo "crates-io-publish disabled but CI package check step remains" >&2
+    exit 1
+  fi
+fi
+
 unset MISE_LOCKED
-mise -C "{{ usage.template_root }}" -E ci lock
+mise -C "${template_root}" -E ci lock
 export MISE_LOCKED=1
-mise -C "{{ usage.template_root }}" install --locked
-mise -C "{{ usage.template_root }}" run deps:update
-mise -C "{{ usage.template_root }}" run docs:lock
-mise -C "{{ usage.template_root }}" run actions:update
-git -C "{{ usage.template_root }}" add --all
-mise -C "{{ usage.template_root }}" run check
+mise -C "${template_root}" install --locked
+mise -C "${template_root}" run deps:update
+if ${docs_site_enabled}; then
+  mise -C "${template_root}" run docs:lock
+  mise -C "${template_root}" run docs:build
+fi
+if ${crates_io_publish_enabled}; then
+  mise -C "${template_root}" -E ci run crates-io:package:check
+fi
+mise -C "${template_root}" run actions:update
+git -C "${template_root}" add --all
+mise -C "${template_root}" run check
 '''

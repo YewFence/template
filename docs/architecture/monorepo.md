@@ -18,14 +18,20 @@ overlays/<name>/        单个模板拥有的来源
 ├── fragments/          模板专属 adapter fragment
 └── mise.toml           只供 monorepo staging validation 使用
 
-templates/<name>/       renderer 生成的完整模板快照
+templates/<name>/       renderer 生成的默认 capability 集合 preview
 templates.toml          profile、render、slot、实例化和 apply 合同
 tools/template-tool/    渲染、验证、实例化和 Git 应用实现
 ```
 
 `shared/` 只拥有各模板确实共享的行为。Go、Rust 和 common 的工具、缓存、审计、版本文件及构建矩阵等真实差异保留在对应 overlay 中。
 
-`templates/<name>/` 是派生结果，不应直接编辑。快照必须完整、自包含，并能从 `shared/`、`overlays/` 和 `templates.toml` 确定性重建。
+`templates/<name>/` 是派生结果，不应直接编辑。每份 preview 必须完整、自包含，并能从 `shared/`、`overlays/` 和 `templates.toml` 按 profile 的默认 capability 集合确定性重建；非默认组合不生成或提交额外 preview。
+
+## Template Capability 合同
+
+`templates.toml` schema v2 在每个 template profile 下以布尔表声明 capabilities。key 存在表示 capability 适用于该 profile，value 表示默认是否启用；名称使用 lowercase kebab-case。resolver 从默认集合出发应用显式 enable/disable override，并拒绝未声明 capability 或同一 capability 的冲突 override。
+
+Template capability 是 project instantiation 前对 template deliverable 行为的选择，不属于 project identity metadata，不创建 metadata token 或持久 provenance。所有 profile 必须先完整验证 capability-owned outputs、conditional/variant slots 和每个分支，再解析 effective enabled set；关闭 capability 不能掩盖坏合同。
 
 ## 组合模型
 
@@ -37,9 +43,10 @@ tools/template-tool/    渲染、验证、实例化和 Git 应用实现
 2. layout 只暴露按行为语义命名的 slot。
 3. shared 或 overlay fragment 为 slot 提供完整实现。
 4. `templates.toml` 为每个输出和 profile 绑定 fragment。
-5. renderer 在写入快照前验证未知 slot、缺失 slot、重复绑定和输出冲突。
+5. profile 可以用 capability-owned output selector、conditional slot binding 或 variant slot binding 声明可选行为。
+6. renderer 在写入 preview 前验证未知 slot、缺失 slot、重复绑定、selector overlap、所有 variant branch 和输出冲突。
 
-slot 不按文本行、step 序号或模板名称划分。单个模板的大型真实差异应保留为完整 adapter，不通过大量细碎 slot 模拟任意文本拼接。
+slot 不按文本行、step 序号或模板名称划分。Capability 归属保存在 `templates.toml`，不通过 Jinja 条件、source 目录名称或 Python 中按模板名称分支表达。单个模板的大型真实差异应保留为完整 adapter，不通过大量细碎 slot 模拟任意文本拼接。
 
 ## 渲染与同步
 
@@ -51,9 +58,9 @@ mise run sync:check [template]
 mise run check [template]
 ```
 
-`render` 从声明式来源重新生成一个或全部模板快照。写入采用 staging 和原子替换，并保留普通文件的 executable bit、路径边界与 symlink 安全约束。
+`render` 从声明式来源重新生成一个或全部 profile 的默认 capability 集合 preview。写入采用 staging 和原子替换，并保留普通文件的 executable bit、路径边界与 symlink 安全约束。
 
-`sync:check` 执行只读重建，将结果与 `templates/<name>/` 比较，用于发现手工修改或过期快照。它验证的是仍含 metadata token 的未实例化 blueprint，不生成依赖状态。
+`sync:check` 执行默认 capability 集合的只读重建，将结果与 `templates/<name>/` 比较，用于发现手工修改或过期 preview。它验证的是仍含 metadata token 的未实例化 blueprint，不生成依赖状态，也不为非默认组合维护 expected tree。
 
 ## 模板交付状态
 
@@ -70,39 +77,42 @@ monorepo 自身的维护环境与模板交付物分离。根 `mise.lock`、`tool
 
 ## Staging Validation
 
-`mise run check [template]` 验证实例化后的真实项目行为，但不修改来源或模板快照：
+`mise run check [template]` 验证实例化后的真实项目行为，但不修改来源或 template deliverable preview。它为每个 profile 自动展开适用 capabilities 的完整布尔笛卡尔积；当前共运行 8 个 cases：`common` 和 `go-cli` 各验证 `docs-site` 开关两个 cases，`rust` 验证 `docs-site` 与 `crates-io-publish` 的四种组合。
 
-1. renderer 在临时目录生成未实例化 blueprint。
-2. 工具读取 `templates.toml` 中固定的 validation metadata，复用 `init-project` 的实例化引擎替换内容和路径 token。
-3. 工具为 staging 建立外部 `GIT_DIR`、`GIT_WORK_TREE` 和 `GIT_INDEX_FILE`，不向模板目录写入 `.git`。
-4. 对应 `overlays/<name>/mise.toml` validation adapter 生成临时 mise、语言、文档和 Action 状态。
-5. validation adapter 运行模板自己的 `mise run check`。
-6. 整个 staging 及生成状态在检查结束后丢弃。
+1. 共享模板准备内核验证完整 profile 合同、解析 case 的 effective capability set，并在隔离 destination 渲染未实例化 blueprint。
+2. 工具读取 `templates.toml` 中固定的 validation metadata，复用正式 project instantiation 引擎替换内容和路径 token。
+3. 工具检查生成树仍处于 unbootstrapped template 状态，并为 staging 建立外部 `GIT_DIR`、`GIT_WORK_TREE` 和 `GIT_INDEX_FILE`，不向模板目录写入 `.git`。
+4. 对应 `overlays/<name>/mise.toml` validation adapter 从按名称排序的显式 capability set 生成临时 mise、语言、文档和 Action 状态。
+5. adapter 验证 capability-specific 任务和输出的存在或缺席，运行对应检查及模板自己的完整 `mise run check`。
+6. Python orchestration 汇总全部 case 结果，整个 staging 及生成状态在检查结束后丢弃。
 
 Python 工具拥有临时目录、隔离环境、Git baseline、validation adapter 调用和清理。语言命令及其执行顺序由对应 validation adapter 拥有。
 
-`sync:check` 与 staging validation 验证不同边界：前者验证来源能够确定性生成 blueprint，后者验证 blueprint 实例化并完成依赖引导后能够通过项目检查。
+`init-project`、`apply-template` 与 staging validation 共享 selected-ref source/profile load、完整合同验证、capability resolve、隔离 destination render 和 metadata instantiation。准备完成后三个入口才分别进入 initial commit 与完整 apply、protected-path filtering 与 squash apply、或者 disposable bootstrap 与检查。Staging 不通过两个应用 CLI 驱动 cases；入口的 Git 生命周期由各自 integration tests 覆盖。
+
+`sync:check` 与 staging validation 验证不同边界：前者验证来源能够确定性生成默认 blueprint preview，后者验证每个 capability 组合的 blueprint 实例化并完成依赖引导后能够通过项目检查。
 
 ## 项目实例化
 
 `templates.toml` 是 render、apply 和 instantiate 共用的 profile 合同。每个 profile 声明：
 
+- 适用 template capabilities 及其默认状态；
 - 必填 metadata 字段；
 - metadata 到 uppercase token 的映射；
 - 有限的声明式派生值；
 - 仅供 staging validation 使用的合成 metadata。
 
-实例化引擎替换可识别 UTF-8 文本和相对路径组件中的显式 uppercase token。路径替换在执行前计算完整计划，拒绝越界、不安全组件和路径碰撞。当前派生 transform 仅包含 `hyphen-to-underscore` 与 `json-string`。
+Capability selection 与 metadata 相互独立，并先于 project instantiation 完成。实例化引擎替换可识别 UTF-8 文本和相对路径组件中的显式 uppercase token。路径替换在执行前计算完整计划，拒绝越界、不安全组件和路径碰撞。当前派生 transform 包含 `hyphen-to-underscore`、`json-string` 与 `toml-basic-string`。
 
 应用器使用静态 CLI 参数集合，不根据远端配置动态构造命令接口，也不承诺不同版本应用器与模板 schema 的任意组合兼容。
 
 ## 新项目与已有项目
 
-`init-project` 面向干净、unborn 且目标路径就是仓库根目录的新 Git 仓库。它创建普通的无父初始提交，在临时模板树中完成项目身份实例化，再使用 clean-target policy 将完整模板应用为 staged changes。它不会创建 remote、绕过 identity、签名或 hooks，也不会提交模板内容。
+`init-project` 面向干净、unborn 且目标路径就是仓库根目录的新 Git 仓库。它先在临时模板树中完成 selected-ref 合同验证、渲染和项目身份实例化，随后创建普通的无父初始提交，再使用 clean-target policy 将完整模板应用为 staged changes。它不会创建 remote、绕过 identity、签名或 hooks，也不会提交模板内容。
 
-`apply-template` 面向至少已有一个 commit 的干净 Git 仓库。默认要求显式 metadata，并只在临时 fetched template tree 中执行 project instantiation；它不会扫描、推断或替换目标仓库原有文件中的 token。`--keep-tokens` 显式保留未实例化 blueprint 行为。
+`apply-template` 面向至少已有一个 commit 的干净 Git 仓库。默认要求显式 metadata，并只在 selected-ref source checkout 之外的临时渲染树中执行 project instantiation；它不会扫描、推断或替换目标仓库原有文件中的 token。`--keep-tokens` 显式保留未实例化 blueprint 行为。
 
-两个入口共享 sparse fetch、临时无父模板 commit 和 Git squash apply 内核，但拥有不同的目标策略：
+两个入口共享 selected-ref 的整仓 shallow/partial fetch、临时无父模板 commit 和 Git squash apply 内核，但拥有不同的目标策略：
 
 - `init-project` 完整应用实例化后的模板，包括 README、AGENTS、忽略规则和许可证。
 - `apply-template` 跳过 `templates.toml` 中声明的根级身份与工作区控制路径，并提示使用者人工比较；实例化只影响传入模板树。

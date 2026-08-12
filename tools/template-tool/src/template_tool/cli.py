@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import itertools
+import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,10 +14,14 @@ import questionary
 from .application import (
     DEFAULT_REPOSITORY,
     ApplicationError,
+    apply_selected_template,
     ApplyResult,
-    apply_template,
-    initialize_project,
+    initialize_selected_project,
+    prepare_template,
     required_metadata,
+    SelectedTemplate,
+    select_template,
+    selected_template_from_source,
     validate_apply_target,
 )
 from .instantiation import InstantiationError, validate_metadata_value
@@ -106,14 +111,28 @@ def check_main(argv: list[str] | None = None) -> None:
         if failed:
             raise SystemExit(1)
 
+        failures: list[tuple[str, str]] = []
         for template in names:
-            print(f"{template}: running disposable staging validation")
-            try:
-                _run_template_project_check(repository, template)
-            except TemplateError as error:
-                failed = True
-                print(f"{template}: {error}", file=sys.stderr)
-        if failed:
+            for case, enabled_capabilities in _validation_cases(repository, template):
+                print(f"{case}: running disposable staging validation")
+                try:
+                    _run_template_project_check(
+                        repository, template, enabled_capabilities
+                    )
+                except TemplateError as error:
+                    failures.append((case, str(error)))
+                except subprocess.CalledProcessError as error:
+                    failures.append(
+                        (
+                            case,
+                            f"command failed with exit code {error.returncode}: "
+                            f"{error.cmd}",
+                        )
+                    )
+        if failures:
+            print("staging validation failures:", file=sys.stderr)
+            for case, reason in failures:
+                print(f"{case}: {reason}", file=sys.stderr)
             raise SystemExit(1)
     except TemplateError as error:
         print(error, file=sys.stderr)
@@ -123,7 +142,31 @@ def check_main(argv: list[str] | None = None) -> None:
         raise SystemExit(1) from error
 
 
-def _run_template_project_check(repository: TemplateRepository, template: str) -> None:
+def _validation_cases(
+    repository: TemplateRepository, template: str
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    capabilities = tuple(name for name, _ in repository.capabilities(template))
+    cases = []
+    for selection in itertools.product((False, True), repeat=len(capabilities)):
+        enabled = tuple(
+            capability
+            for capability, selected in zip(capabilities, selection, strict=True)
+            if selected
+        )
+        states = ",".join(
+            f"{capability}={'on' if selected else 'off'}"
+            for capability, selected in zip(capabilities, selection, strict=True)
+        )
+        cases.append((f"{template}[{states or 'no-capabilities'}]", enabled))
+    return tuple(cases)
+
+
+def _run_template_project_check(
+    repository: TemplateRepository,
+    template: str,
+    enabled_capabilities: tuple[str, ...],
+) -> None:
+    enabled_capabilities = tuple(sorted(enabled_capabilities))
     environment = os.environ.copy()
     environment.update(
         {
@@ -136,8 +179,16 @@ def _run_template_project_check(repository: TemplateRepository, template: str) -
     )
     with tempfile.TemporaryDirectory(prefix=f"template-check-{template}-") as temporary:
         template_root = Path(temporary) / template
-        shutil.copytree(repository.templates_root / template, template_root, symlinks=True)
-        repository.instantiate(template, template_root, repository.validation_metadata(template))
+        try:
+            prepare_template(
+                repository,
+                template,
+                template_root,
+                metadata=repository.validation_metadata(template),
+                enabled_capabilities=enabled_capabilities,
+            )
+        except ApplicationError as error:
+            raise TemplateError(str(error)) from error
 
         git_dir = Path(temporary) / "repo.git"
         index = Path(temporary) / "index"
@@ -172,7 +223,10 @@ def _run_template_project_check(repository: TemplateRepository, template: str) -
 
         overlay_root = repository.overlays_root / template
         check_environment = template_environment | {
-            "MISE_TRUSTED_CONFIG_PATHS": f"{overlay_root}:{template_root}"
+            "MISE_TRUSTED_CONFIG_PATHS": f"{overlay_root}:{template_root}",
+            "TEMPLATE_TOOL_ENABLED_CAPABILITIES": json.dumps(
+                enabled_capabilities, separators=(",", ":")
+            ),
         }
         completed = subprocess.run(
             ["mise", "run", "check", str(template_root)],
@@ -190,10 +244,11 @@ def _apply_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
     parser.add_argument("--ref", required=True, help="Git ref to fetch")
     parser.add_argument("--template", required=True, help="template name")
+    parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
     _metadata_arguments(parser)
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--interactive", action="store_true")
-    mode.add_argument("--keep-tokens", action="store_true")
+    _capability_arguments(parser)
+    parser.add_argument("--interactive", action="store_true")
+    parser.add_argument("--keep-tokens", action="store_true")
     return parser
 
 
@@ -204,16 +259,59 @@ def apply_main(argv: list[str] | None = None) -> None:
         if args.keep_tokens and metadata:
             raise ApplicationError("--keep-tokens cannot be combined with metadata")
         validate_apply_target(args.target)
-        if args.interactive:
-            metadata = _collect_metadata(args.repo, args.ref, args.template, metadata)
-        result = apply_template(
-            args.repo,
-            args.ref,
-            args.template,
-            args.target,
-            metadata=None if args.keep_tokens else metadata,
-            keep_tokens=args.keep_tokens,
+        selected = (
+            selected_template_from_source(args.repo, args.ref, args.source_checkout)
+            if args.source_checkout is not None
+            else None
         )
+        if selected is not None:
+            capabilities = _resolve_interactive_selection(
+                selected,
+                args.template,
+                enable=tuple(args.enable_capability),
+                disable=tuple(args.disable_capability),
+                interactive=args.interactive,
+            )
+            if args.interactive and not args.keep_tokens:
+                metadata = _collect_metadata_for_fields(
+                    selected.required_metadata(args.template), metadata, confirm=False
+                )
+            if args.interactive:
+                _confirm_selection(args.template, capabilities, metadata)
+            result = apply_selected_template(
+                selected,
+                args.template,
+                args.target,
+                metadata=None if args.keep_tokens else metadata,
+                enabled_capabilities=capabilities,
+                keep_tokens=args.keep_tokens,
+            )
+        else:
+            with tempfile.TemporaryDirectory(prefix="apply-template-") as temporary:
+                with select_template(args.repo, args.ref, Path(temporary)) as selected:
+                    capabilities = _resolve_interactive_selection(
+                        selected,
+                        args.template,
+                        enable=tuple(args.enable_capability),
+                        disable=tuple(args.disable_capability),
+                        interactive=args.interactive,
+                    )
+                    if args.interactive and not args.keep_tokens:
+                        metadata = _collect_metadata_for_fields(
+                            selected.required_metadata(args.template),
+                            metadata,
+                            confirm=False,
+                        )
+                    if args.interactive:
+                        _confirm_selection(args.template, capabilities, metadata)
+                    result = apply_selected_template(
+                        selected,
+                        args.template,
+                        args.target,
+                        metadata=None if args.keep_tokens else metadata,
+                        enabled_capabilities=capabilities,
+                        keep_tokens=args.keep_tokens,
+                    )
     except ApplicationError as error:
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(1) from error
@@ -233,8 +331,11 @@ def _init_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
     parser.add_argument("--ref", required=True, help="Git ref to fetch")
     parser.add_argument("--template", required=True, help="template name")
+    parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
     _metadata_arguments(parser)
+    _capability_arguments(parser)
     parser.add_argument("--interactive", action="store_true")
+    parser.add_argument("--keep-tokens", action="store_true")
     return parser
 
 
@@ -249,6 +350,11 @@ def _metadata_arguments(parser: argparse.ArgumentParser) -> None:
         "binary-name",
     ):
         parser.add_argument(f"--{option}")
+
+
+def _capability_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--enable-capability", action="append", default=[])
+    parser.add_argument("--disable-capability", action="append", default=[])
 
 
 def _metadata_from_args(args: argparse.Namespace) -> dict[str, str]:
@@ -274,6 +380,15 @@ def _collect_metadata(
     provided: dict[str, str],
 ) -> dict[str, str]:
     required = required_metadata(repository, reference, template)
+    return _collect_metadata_for_fields(required, provided)
+
+
+def _collect_metadata_for_fields(
+    required: tuple[str, ...],
+    provided: dict[str, str],
+    *,
+    confirm: bool = True,
+) -> dict[str, str]:
     missing = [field for field in required if field not in provided]
     metadata = dict(provided)
     try:
@@ -289,22 +404,123 @@ def _collect_metadata(
                     continue
                 metadata[field] = value
                 break
-        summary = "\n".join(f"{field}: {metadata[field]}" for field in required)
-        confirmed = questionary.confirm(f"Confirm metadata?\n{summary}", default=True).ask()
-        if confirmed is not True:
-            raise ApplicationError("interactive metadata collection cancelled")
+        if confirm:
+            summary = "\n".join(f"{field}: {metadata[field]}" for field in required)
+            confirmed = questionary.confirm(
+                f"Confirm metadata?\n{summary}", default=True
+            ).ask()
+            if confirmed is not True:
+                raise ApplicationError("interactive metadata collection cancelled")
     except (KeyboardInterrupt, EOFError):
         raise ApplicationError("interactive metadata collection cancelled") from None
     return metadata
+
+
+def _resolve_interactive_selection(
+    selected: SelectedTemplate,
+    template: str,
+    *,
+    enable: tuple[str, ...],
+    disable: tuple[str, ...],
+    interactive: bool,
+) -> tuple[str, ...]:
+    explicit = set(enable) | set(disable)
+    enabled = list(enable)
+    disabled = list(disable)
+    try:
+        selected.resolve_capabilities(template, enable=enable, disable=disable)
+        if interactive:
+            for name, default_enabled in selected.capabilities(template):
+                if name in explicit:
+                    continue
+                answer = questionary.confirm(
+                    f"Enable capability {name}?", default=default_enabled
+                ).ask()
+                if answer is None:
+                    raise ApplicationError("interactive capability selection cancelled")
+                (enabled if answer else disabled).append(name)
+    except (KeyboardInterrupt, EOFError):
+        raise ApplicationError("interactive capability selection cancelled") from None
+    return selected.resolve_capabilities(
+        template, enable=tuple(enabled), disable=tuple(disabled)
+    )
+
+
+def _confirm_selection(
+    template: str, capabilities: tuple[str, ...], metadata: dict[str, str]
+) -> None:
+    capability_summary = ", ".join(capabilities) or "(none)"
+    lines = [f"Template: {template}", f"Capabilities: {capability_summary}"]
+    lines.extend(f"{field}: {value}" for field, value in metadata.items())
+    try:
+        confirmed = questionary.confirm(
+            "Confirm selection?\n" + "\n".join(lines), default=True
+        ).ask()
+    except (KeyboardInterrupt, EOFError):
+        raise ApplicationError("interactive selection cancelled") from None
+    if confirmed is not True:
+        raise ApplicationError("interactive selection cancelled")
 
 
 def init_main(argv: list[str] | None = None) -> None:
     args = _init_parser().parse_args(argv)
     metadata = _metadata_from_args(args)
     try:
-        if args.interactive:
-            metadata = _collect_metadata(args.repo, args.ref, args.template, metadata)
-        result = initialize_project(args.repo, args.ref, args.template, args.target, metadata)
+        if args.keep_tokens and metadata:
+            raise ApplicationError("--keep-tokens cannot be combined with metadata")
+        selected = (
+            selected_template_from_source(args.repo, args.ref, args.source_checkout)
+            if args.source_checkout is not None
+            else None
+        )
+        if selected is not None:
+            capabilities = _resolve_interactive_selection(
+                selected,
+                args.template,
+                enable=tuple(args.enable_capability),
+                disable=tuple(args.disable_capability),
+                interactive=args.interactive,
+            )
+            if args.interactive and not args.keep_tokens:
+                metadata = _collect_metadata_for_fields(
+                    selected.required_metadata(args.template), metadata, confirm=False
+                )
+            if args.interactive:
+                _confirm_selection(args.template, capabilities, metadata)
+            result = initialize_selected_project(
+                selected,
+                args.template,
+                args.target,
+                None if args.keep_tokens else metadata,
+                enabled_capabilities=capabilities,
+                keep_tokens=args.keep_tokens,
+            )
+        else:
+            with tempfile.TemporaryDirectory(prefix="init-project-") as temporary:
+                with select_template(args.repo, args.ref, Path(temporary)) as selected:
+                    capabilities = _resolve_interactive_selection(
+                        selected,
+                        args.template,
+                        enable=tuple(args.enable_capability),
+                        disable=tuple(args.disable_capability),
+                        interactive=args.interactive,
+                    )
+                    if args.interactive and not args.keep_tokens:
+                        metadata = _collect_metadata_for_fields(
+                            selected.required_metadata(args.template),
+                            metadata,
+                            confirm=False,
+                        )
+                    if args.interactive:
+                        _confirm_selection(args.template, capabilities, metadata)
+                    result = initialize_selected_project(
+                        selected,
+                        args.template,
+                        args.target,
+                        None if args.keep_tokens else metadata,
+                        enabled_capabilities=capabilities,
+                        keep_tokens=args.keep_tokens,
+                    )
     except ApplicationError as error:
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(1) from error
@@ -324,6 +540,7 @@ def _print_apply_result(result: ApplyResult) -> None:
     print(f"Template: {result.template}")
     print(f"Ref: {result.reference}")
     print(f"Template-Commit: {result.commit}")
+    print(f"Capabilities: {', '.join(result.capabilities) or '(none)'}")
     if result.skipped:
         print(f"HINT: skipped protected root paths: {', '.join(result.skipped)}")
     for hint in result.hints:
@@ -344,6 +561,73 @@ def _print_apply_result(result: ApplyResult) -> None:
         print("HINT: finish, resolve, or cancel this Git application before continuing normal jj operations.")
 
 
+def _capabilities_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="list-template-capabilities")
+    parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
+    parser.add_argument("--ref", required=True, help="Git ref to fetch")
+    parser.add_argument("--template", required=True, help="template name")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
+    return parser
+
+
+def capabilities_main(argv: list[str] | None = None) -> None:
+    args = _capabilities_parser().parse_args(argv)
+    try:
+        selected = (
+            selected_template_from_source(args.repo, args.ref, args.source_checkout)
+            if args.source_checkout is not None
+            else None
+        )
+        if selected is not None:
+            _print_capabilities(selected, args.template, as_json=args.json)
+        else:
+            with tempfile.TemporaryDirectory(prefix="template-capabilities-") as temporary:
+                with select_template(args.repo, args.ref, Path(temporary)) as selected:
+                    _print_capabilities(selected, args.template, as_json=args.json)
+    except ApplicationError as error:
+        print(f"error: {error}", file=sys.stderr)
+        raise SystemExit(1) from error
+    except subprocess.CalledProcessError as error:
+        message = error.stderr.strip() if isinstance(error.stderr, str) else ""
+        detail = f": {message}" if message else ""
+        print(
+            f"error: command failed with exit code {error.returncode}: {error.cmd}{detail}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from error
+
+
+def _print_capabilities(
+    selected: SelectedTemplate, template: str, *, as_json: bool
+) -> None:
+    capabilities = selected.capabilities(template)
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "repository": selected.repository,
+                    "ref": selected.reference,
+                    "commit": selected.commit,
+                    "template": template,
+                    "capabilities": [
+                        {"name": name, "default_enabled": default_enabled}
+                        for name, default_enabled in capabilities
+                    ],
+                },
+                separators=(",", ":"),
+            )
+        )
+        return
+    print(f"Repository: {selected.repository}")
+    print(f"Template: {template}")
+    print(f"Ref: {selected.reference}")
+    print(f"Template-Commit: {selected.commit}")
+    for name, default_enabled in capabilities:
+        state = "enabled" if default_enabled else "disabled"
+        print(f"Capability: {name} (default: {state})")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="template-tool")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -359,17 +643,29 @@ def main(argv: list[str] | None = None) -> None:
     apply_parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
     apply_parser.add_argument("--ref", required=True)
     apply_parser.add_argument("--template", required=True)
+    apply_parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
     _metadata_arguments(apply_parser)
-    apply_mode = apply_parser.add_mutually_exclusive_group()
-    apply_mode.add_argument("--interactive", action="store_true")
-    apply_mode.add_argument("--keep-tokens", action="store_true")
+    _capability_arguments(apply_parser)
+    apply_parser.add_argument("--interactive", action="store_true")
+    apply_parser.add_argument("--keep-tokens", action="store_true")
     init_parser = subparsers.add_parser("init")
     init_parser.add_argument("target", nargs="?", type=Path, default=Path.cwd())
     init_parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
     init_parser.add_argument("--ref", required=True)
     init_parser.add_argument("--template", required=True)
+    init_parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
     _metadata_arguments(init_parser)
+    _capability_arguments(init_parser)
     init_parser.add_argument("--interactive", action="store_true")
+    init_parser.add_argument("--keep-tokens", action="store_true")
+    capabilities_parser = subparsers.add_parser("capabilities")
+    capabilities_parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
+    capabilities_parser.add_argument("--ref", required=True)
+    capabilities_parser.add_argument("--template", required=True)
+    capabilities_parser.add_argument("--json", action="store_true")
+    capabilities_parser.add_argument(
+        "--source-checkout", type=Path, help=argparse.SUPPRESS
+    )
     args = parser.parse_args(argv)
     if args.command == "apply":
         forwarded = [str(args.target), "--repo", args.repo, "--ref", args.ref, "--template", args.template]
@@ -381,6 +677,12 @@ def main(argv: list[str] | None = None) -> None:
             forwarded.append("--interactive")
         if args.keep_tokens:
             forwarded.append("--keep-tokens")
+        for capability in args.enable_capability:
+            forwarded.extend(["--enable-capability", capability])
+        for capability in args.disable_capability:
+            forwarded.extend(["--disable-capability", capability])
+        if args.source_checkout is not None:
+            forwarded.extend(["--source-checkout", str(args.source_checkout)])
         apply_main(forwarded)
         return
     if args.command == "init":
@@ -391,7 +693,34 @@ def main(argv: list[str] | None = None) -> None:
                 forwarded.extend([f"--{option}", value])
         if args.interactive:
             forwarded.append("--interactive")
+        if args.keep_tokens:
+            forwarded.append("--keep-tokens")
+        for capability in args.enable_capability:
+            forwarded.extend(["--enable-capability", capability])
+        for capability in args.disable_capability:
+            forwarded.extend(["--disable-capability", capability])
+        if args.source_checkout is not None:
+            forwarded.extend(["--source-checkout", str(args.source_checkout)])
         init_main(forwarded)
+        return
+    if args.command == "capabilities":
+        forwarded = [
+            "--repo",
+            args.repo,
+            "--ref",
+            args.ref,
+            "--template",
+            args.template,
+        ]
+        if args.json:
+            forwarded.append("--json")
+        if args.source_checkout is not None:
+            forwarded.extend(["--source-checkout", str(args.source_checkout)])
+            capabilities_main(forwarded)
+        else:
+            from .bootstrap import capabilities_main as run_selected_capabilities
+
+            run_selected_capabilities(forwarded)
         return
     forwarded = []
     if args.template:

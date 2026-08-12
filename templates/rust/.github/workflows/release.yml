@@ -255,15 +255,6 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Install cross compiler
-        if: ${{ matrix.packages }}
-        env:
-          PACKAGES: ${{ matrix.packages }}
-        run: |
-          read -r -a packages <<< "${PACKAGES}"
-          sudo apt-get update
-          sudo apt-get install -y "${packages[@]}"
-
       - name: Package release binary
         run: mise run release:package
 

@@ -116,23 +116,6 @@ run = 'go install -trimpath -ldflags="-X main.version=${BUILD_VERSION:-dev}" ./c
 description = "Build the CLI executable"
 run = 'go build -trimpath -ldflags="-s -w -X main.version=${BUILD_VERSION:-dev}" -o "${BUILD_OUTPUT_DIR:-bin}/" ./cmd/{{BINARY_NAME}}'
 
-[tasks."build:check"]
-description = "Check whether the CLI builds"
-run = "go test -run '^$' ./cmd/..."
-
-[tasks."actions:check"]
-description = "Run actionlint"
-depends = ["actions:pin-offline:check"]
-run = "actionlint .github/workflows/*.yml"
-
-[tasks.'actions:update']
-description = "Update GitHub Action versions and pin to commit hashes"
-run = "pinact run --update"
-
-[tasks.'actions:pin-offline:check']
-description = "Check GitHub Action versions and pin to commit hashes"
-run = "unset PINACT_MIN_AGE && pinact run --fix=false --no-api"
-
 [tasks.'docs:install']
 description = "Install documentation site dependencies"
 dir = "docs"
@@ -165,3 +148,20 @@ description = "Preview the VitePress documentation site"
 depends = ["docs:install:locked"]
 dir = "docs"
 run = "pnpm run preview"
+
+[tasks."build:check"]
+description = "Check whether the CLI builds"
+run = "go test -run '^$' ./cmd/..."
+
+[tasks."actions:check"]
+description = "Run actionlint"
+depends = ["actions:pin-offline:check"]
+run = "actionlint .github/workflows/*.yml"
+
+[tasks.'actions:update']
+description = "Update GitHub Action versions and pin to commit hashes"
+run = "pinact run --update"
+
+[tasks.'actions:pin-offline:check']
+description = "Check GitHub Action versions and pin to commit hashes"
+run = "unset PINACT_MIN_AGE && pinact run --fix=false --no-api"
