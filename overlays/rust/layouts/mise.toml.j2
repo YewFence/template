@@ -124,9 +124,7 @@ alias = "f"
 [tasks.'hooks:install']
 description = "Install Git hooks managed by hk"
 run = "hk install"
-
-<$ slot("docs_tasks", optional=true) | trim $>
-
+<$ slot("docs_tasks", optional=true) $>
 [tasks."actions:check"]
 description = "Run actionlint"
 depends = ["actions:pin-offline:check"]

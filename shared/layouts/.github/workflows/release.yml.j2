@@ -196,7 +196,6 @@ jobs:
             echo "| Release PR Fresh | \`true\` |"
             echo "| Release Base SHA | \`${release_base_sha}\` |"
           } >> "${GITHUB_STEP_SUMMARY}"
-
 <$ slot("build_job", optional=true) $>
   release:
     name: Publish GitHub Release
@@ -246,7 +245,6 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
           echo "path=${notes_file}" >> "${GITHUB_OUTPUT}"
-
 <$ slot("release_artifact_download", optional=true) $>
       - name: Create release tag
         if: ${{ needs.version.outputs.create_tag == 'true' }}
@@ -286,9 +284,7 @@ jobs:
           release_url="$(gh release view "${RELEASE_TAG}" --json url --jq .url)"
           echo "Published GitHub Release ${release_url}"
           echo "| URL | ${release_url} |" >> "${GITHUB_STEP_SUMMARY}"
-
 <$ slot("publish_crate_job", optional=true) $>
-
   close-superseded-release-pr:
     name: Close Superseded Release PR
     needs:

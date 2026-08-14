@@ -171,6 +171,46 @@ class TemplateRepositoryTest(unittest.TestCase):
             "expr: ${{ github.ref }}\n- run: mise run check\n",
         )
 
+    def test_layout_rejects_multiple_consecutive_blank_lines(self) -> None:
+        (self.root / "shared/layouts").mkdir(parents=True)
+        (self.root / "shared/layouts/README.md.j2").write_text(
+            "first section\n \n\t\nsecond section\n", encoding="utf-8"
+        )
+        self.write_config()
+
+        with self.assertRaisesRegex(
+            TemplateError,
+            r"more than one consecutive blank line at output line 2: .*README\.md\.j2",
+        ):
+            TemplateRepository(self.root).render("example")
+
+    def test_layout_allows_one_blank_line(self) -> None:
+        (self.root / "shared/layouts").mkdir(parents=True)
+        (self.root / "shared/layouts/README.md.j2").write_text(
+            "first section\n\nsecond section\n", encoding="utf-8"
+        )
+        self.write_config()
+
+        TemplateRepository(self.root).render("example")
+
+        self.assertEqual(
+            (self.root / "templates/example/README.md").read_text(),
+            "first section\n\nsecond section\n",
+        )
+
+    def test_layout_rejects_multiple_leading_blank_lines(self) -> None:
+        (self.root / "shared/layouts").mkdir(parents=True)
+        (self.root / "shared/layouts/README.md.j2").write_text(
+            "\n\nfirst section\n", encoding="utf-8"
+        )
+        self.write_config()
+
+        with self.assertRaisesRegex(
+            TemplateError,
+            r"more than one consecutive blank line at output line 2: .*README\.md\.j2",
+        ):
+            TemplateRepository(self.root).render("example")
+
     def test_conditional_slot_binding_is_omitted_when_capability_is_disabled(self) -> None:
         (self.root / "shared/layouts").mkdir(parents=True)
         (self.root / "shared/fragments/tasks").mkdir(parents=True)
@@ -856,6 +896,11 @@ class TemplateRepositoryTest(unittest.TestCase):
             publish_script_text = publish_script.read_text()
             self.assertIn(
                 "cargo metadata --locked --no-deps --format-version 1",
+                publish_script_text,
+            )
+            self.assertIn(
+                "--user-agent \"${crate_name}-publish "
+                "(https://github.com/YewFence/example-rust-cli)\"",
                 publish_script_text,
             )
             self.assertIn("https://crates.io/api/v1/crates/", publish_script_text)

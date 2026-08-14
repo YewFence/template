@@ -55,29 +55,18 @@ mise install
 ```bash
 mise run render [template]
 mise run sync:check [template]
-mise run check [template]
 ```
 
 - `render` 重新生成一个或全部模板快照。
 - `sync:check` 只读验证来源和未实例化快照同步。
-- `check` 为适用 capabilities 展开完整布尔组合，创建 disposable staging，复用 `init-project`、`apply-template` 共用的模板准备内核与正式 project instantiation，调用对应 validation adapter 生成临时状态，再运行模板自己的完整检查。
+- `check` 为适用 capabilities 展开完整布尔组合，创建 disposable staging，复用 `init-project`、`apply-template` 共用的模板准备内核与正式 project instantiation，调用对应 validation adapter 生成临时状态，再运行模板自己的完整检查。这个不需要本地跑，交由 Github Action 负责检查。
 
-修改 `tools/template-tool/` 后，至少运行：
+修改 `tools/template-tool/` 后，运行：
 
 ```bash
 uv run --project tools/template-tool python -m unittest discover -s tools/template-tool/tests -v
 mise run sync:check
 ```
-
-涉及 renderer、实例化合同、profile 或生成结果的变化，还要运行受影响模板的 `mise run check [template]`；修改共享行为时运行无模板参数的完整 `mise run check`。
-
-更新根维护 workflow 的 Action digest 使用：
-
-```bash
-MISE_OFFLINE=0 mise run actions:update
-```
-
-该命令需要联网并修改根 `.github/workflows/**`。执行前确认任务确实要求更新，并按运行环境规则申请网络或沙盒权限。
 
 ## 文档导航
 

@@ -13,17 +13,21 @@ PUBLISH_SCRIPT = REPOSITORY_ROOT / "overlays/rust/static/scripts/publish-crate"
 
 class PublishCrateScriptTest(unittest.TestCase):
     def test_existing_version_succeeds_without_token_or_publish(self) -> None:
-        result, cargo_calls = self.run_script(status="200")
+        result, cargo_calls, user_agent = self.run_script(status="200")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Crate example-crate 1.2.3 already exists", result.stdout)
+        self.assertEqual(
+            user_agent,
+            "example-crate-publish (https://github.com/{{GITHUB_OWNER}}/{{REPO_NAME}})",
+        )
         self.assertEqual(
             cargo_calls,
             ["metadata --locked --no-deps --format-version 1"],
         )
 
     def test_missing_version_runs_dry_run_and_publish(self) -> None:
-        result, cargo_calls = self.run_script(status="404", token="trusted-token")
+        result, cargo_calls, _ = self.run_script(status="404", token="trusted-token")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Crate example-crate 1.2.3 is not published yet", result.stdout)
@@ -37,7 +41,7 @@ class PublishCrateScriptTest(unittest.TestCase):
         )
 
     def test_missing_version_requires_token_after_dry_run(self) -> None:
-        result, cargo_calls = self.run_script(status="404")
+        result, cargo_calls, _ = self.run_script(status="404")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(
@@ -53,7 +57,7 @@ class PublishCrateScriptTest(unittest.TestCase):
         )
 
     def test_package_version_must_match_release_version(self) -> None:
-        result, cargo_calls = self.run_script(
+        result, cargo_calls, _ = self.run_script(
             status="404",
             crate_version="1.2.4",
         )
@@ -74,17 +78,19 @@ class PublishCrateScriptTest(unittest.TestCase):
         status: str,
         crate_version: str = "1.2.3",
         token: str | None = None,
-    ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    ) -> tuple[subprocess.CompletedProcess[str], list[str], str | None]:
         with tempfile.TemporaryDirectory() as temporary:
             temporary_root = Path(temporary)
             binary_directory = temporary_root / "bin"
             binary_directory.mkdir()
             cargo_calls_path = temporary_root / "cargo-calls"
+            curl_user_agent_path = temporary_root / "curl-user-agent"
             self.write_shims(binary_directory)
 
             environment = os.environ | {
                 "PATH": f"{binary_directory}:{os.environ['PATH']}",
                 "FAKE_CARGO_CALLS": str(cargo_calls_path),
+                "FAKE_CURL_USER_AGENT": str(curl_user_agent_path),
                 "FAKE_CRATE_NAME": "example-crate",
                 "FAKE_CRATE_VERSION": crate_version,
                 "FAKE_CRATES_IO_STATUS": status,
@@ -110,7 +116,12 @@ class PublishCrateScriptTest(unittest.TestCase):
                 if cargo_calls_path.exists()
                 else []
             )
-            return result, cargo_calls
+            user_agent = (
+                curl_user_agent_path.read_text(encoding="utf-8")
+                if curl_user_agent_path.exists()
+                else None
+            )
+            return result, cargo_calls, user_agent
 
     def write_shims(self, binary_directory: Path) -> None:
         cargo = binary_directory / "cargo"
@@ -144,12 +155,15 @@ class PublishCrateScriptTest(unittest.TestCase):
             "#!/usr/bin/env bash\n"
             "set -euo pipefail\n"
             "output=''\n"
+            "user_agent=''\n"
             "while [[ $# -gt 0 ]]; do\n"
             "  case \"$1\" in\n"
             "    --output) output=\"$2\"; shift 2 ;;\n"
+            "    --user-agent) user_agent=\"$2\"; shift 2 ;;\n"
             "    *) shift ;;\n"
             "  esac\n"
             "done\n"
+            "printf '%s' \"${user_agent}\" > \"${FAKE_CURL_USER_AGENT}\"\n"
             "printf '%s\\n' '{}' > \"${output}\"\n"
             "printf '%s' \"${FAKE_CRATES_IO_STATUS}\"\n",
             encoding="utf-8",

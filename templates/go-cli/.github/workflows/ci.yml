@@ -43,11 +43,10 @@ jobs:
             go-ci-${{ runner.os }}-
 
       - name: Validate CI tool locks
-        run: mise -E ci install --dry-run --locked
+        run: mise install --dry-run --locked
 
       - name: Check
         run: mise run check
-
 
   docs:
     name: Docs

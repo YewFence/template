@@ -2,7 +2,6 @@
 git-cliff = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 
-
 [tasks.audit]
 description = "Run Go dependency verification and vulnerability checks"
 run = [
@@ -17,8 +16,6 @@ run = "govulncheck ./..."
 [tasks.'mod:verify']
 description = "Verify Go module dependencies"
 run = "go mod verify"
-
-
 
 [tasks.'actions:pin:check']
 # Need github token to avoid rate limit
@@ -50,8 +47,6 @@ fi
 
 printf '%s\\n' "${version}"
 """
-
-
 
 [tasks.'release:tag']
 description = "Print the release tag, automatically generate if RELEASE_TAG is not set"

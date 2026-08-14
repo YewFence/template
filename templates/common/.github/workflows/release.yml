@@ -197,7 +197,6 @@ jobs:
             echo "| Release Base SHA | \`${release_base_sha}\` |"
           } >> "${GITHUB_STEP_SUMMARY}"
 
-
   release:
     name: Publish GitHub Release
     needs: version
@@ -247,7 +246,6 @@ jobs:
 
           echo "path=${notes_file}" >> "${GITHUB_OUTPUT}"
 
-
       - name: Create release tag
         if: ${{ needs.version.outputs.create_tag == 'true' }}
         env:
@@ -286,8 +284,6 @@ jobs:
           release_url="$(gh release view "${RELEASE_TAG}" --json url --jq .url)"
           echo "Published GitHub Release ${release_url}"
           echo "| URL | ${release_url} |" >> "${GITHUB_STEP_SUMMARY}"
-
-
 
   close-superseded-release-pr:
     name: Close Superseded Release PR

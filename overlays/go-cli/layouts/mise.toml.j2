@@ -112,9 +112,7 @@ run = 'go install -trimpath -ldflags="-X main.version=${BUILD_VERSION:-dev}" ./c
 [tasks.build]
 description = "Build the CLI executable"
 run = 'go build -trimpath -ldflags="-s -w -X main.version=${BUILD_VERSION:-dev}" -o "${BUILD_OUTPUT_DIR:-bin}/" ./cmd/{{BINARY_NAME}}'
-
-<$ slot("docs_tasks", optional=true) | trim $>
-
+<$ slot("docs_tasks", optional=true) $>
 [tasks."build:check"]
 description = "Check whether the CLI builds"
 run = "go test -run '^$' ./cmd/..."

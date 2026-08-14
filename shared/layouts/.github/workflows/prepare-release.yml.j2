@@ -84,7 +84,6 @@ jobs:
         run: |
           echo "No release notes were generated. Skipping release PR."
           echo "| Result | No release notes were generated, release PR skipped |" >> "${GITHUB_STEP_SUMMARY}"
-
 <$ slot("release_files_update", optional=true) $>
       - name: Update changelog
         if: ${{ steps.release.outputs.should_prepare == 'true' }}

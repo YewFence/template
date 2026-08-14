@@ -62,4 +62,4 @@ jobs:
             go-audit-${{ runner.os }}-
 
       - name: Audit
-        run: mise -E ci run audit
+        run: mise run audit

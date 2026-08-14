@@ -1,9 +1,15 @@
 [tools]
-git-cliff = "latest"
-<$ slot("maintenance_tools", optional=true) $><$ slot("crates_io_publish_tools", optional=true) $>
+<$ [
+  'git-cliff = "latest"',
+  slot("maintenance_tools", optional=true) | trim,
+  slot("crates_io_publish_tools", optional=true) | trim,
+] | reject("equalto", "") | join("\n") $>
 
-<$ slot("audit_tasks") $>
-<$ slot("crates_io_package_check", optional=true) $><$ slot("crates_io_publish_task", optional=true) $>
+<$ [
+  slot("audit_tasks") | trim,
+  slot("crates_io_package_check", optional=true) | trim,
+  slot("crates_io_publish_task", optional=true) | trim,
+] | reject("equalto", "") | join("\n\n") $>
 
 [tasks.'actions:pin:check']
 # Need github token to avoid rate limit
@@ -35,9 +41,7 @@ fi
 
 printf '%s\\n' "${version}"
 """
-
 <$ slot("release_version_tasks", optional=true) $>
-
 [tasks.'release:tag']
 description = "Print the release tag, automatically generate if RELEASE_TAG is not set"
 shell = "bash -c"

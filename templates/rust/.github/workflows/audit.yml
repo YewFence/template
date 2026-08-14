@@ -57,4 +57,4 @@ jobs:
           shared-key: rust-audit
 
       - name: Audit
-        run: mise -E ci run audit
+        run: mise run audit

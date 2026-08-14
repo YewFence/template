@@ -32,17 +32,13 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           add_shims_to_path: true
           cache_key: "mise-check-{{file_hash}}"
-
 <$ slot("project_cache", optional=true) $>
       - name: Validate CI tool locks
-        run: mise -E ci install --dry-run --locked
+        run: mise install --dry-run --locked
 
       - name: Check
         run: mise run check
-
-<$ slot("crates_io_package_check", optional=true) $>
-<$ slot("docs_job", optional=true) | trim | indent(2, true) $>
-
+<$ slot("crates_io_package_check", optional=true) $><$ slot("docs_job", optional=true) | indent(2) $>
   actions-version:
     name: Check Action Versions
     runs-on: ubuntu-latest

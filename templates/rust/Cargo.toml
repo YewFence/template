@@ -9,7 +9,6 @@ repository = "https://github.com/{{GITHUB_OWNER}}/{{REPO_NAME}}"
 readme = "README.md"
 publish = false
 
-
 [lints.rust]
 unsafe_code = "forbid"
 

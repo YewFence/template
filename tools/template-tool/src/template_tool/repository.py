@@ -1026,6 +1026,15 @@ class TemplateRepository:
             raise TemplateError(
                 f"template {template_name!r} binds unknown slots in {layout_path}: {names}"
             )
+        excessive_blank_lines = re.search(
+            r"(?:\A|\n)[ \t]*\n[ \t]*\n", rendered
+        )
+        if excessive_blank_lines is not None:
+            output_line = rendered.count("\n", 0, excessive_blank_lines.start()) + 2
+            raise TemplateError(
+                f"rendered layout contains more than one consecutive blank line "
+                f"at output line {output_line}: {layout_path}"
+            )
         return rendered
 
     def _render_fragment(self, reference: str, overlay_root: Path) -> str:
