@@ -15,91 +15,25 @@
       RELEASE_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ needs.version.outputs.checkout_ref }}
 
       - name: Setup mise
-        uses: jdx/mise-action@v4.2.4
+        uses: jdx/mise-action@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          install_args: rust
+          install_args: rust jq
           add_shims_to_path: true
           cache_key: "mise-publish-crate-{{install_args_hash}}-{{file_hash}}"
 
-      - name: Resolve and validate crate metadata
-        id: crate
-        run: |
-          metadata="$(cargo metadata --locked --no-deps --format-version 1)"
-          package_count="$(jq '.packages | length' <<< "${metadata}")"
-          if [[ "${package_count}" != "1" ]]; then
-            echo "crates-io publishing requires exactly one root Cargo package"
-            exit 1
-          fi
-
-          crate_name="$(jq -r '.packages[0].name' <<< "${metadata}")"
-          crate_version="$(jq -r '.packages[0].version' <<< "${metadata}")"
-          if [[ -z "${crate_name}" || -z "${crate_version}" || "${crate_name}" == "null" || "${crate_version}" == "null" ]]; then
-            echo "cargo metadata did not resolve exactly one root package name and version"
-            exit 1
-          fi
-          if [[ "${crate_version}" != "${RELEASE_VERSION}" ]]; then
-            echo "Cargo package version ${crate_version} does not match release tag ${RELEASE_TAG}"
-            exit 1
-          fi
-
-          echo "name=${crate_name}" >> "${GITHUB_OUTPUT}"
-          echo "version=${crate_version}" >> "${GITHUB_OUTPUT}"
-
-      - name: Check whether crate version already exists
-        id: existing
-        env:
-          CRATE_NAME: ${{ steps.crate.outputs.name }}
-          CRATE_VERSION: ${{ steps.crate.outputs.version }}
-        run: |
-          status="$(curl --silent --show-error --output "${RUNNER_TEMP}/crate.json" --write-out '%{http_code}' "https://crates.io/api/v1/crates/${CRATE_NAME}/${CRATE_VERSION}")"
-          case "${status}" in
-            200)
-              echo "Crate ${CRATE_NAME} ${CRATE_VERSION} already exists"
-              echo "published=true" >> "${GITHUB_OUTPUT}"
-              ;;
-            404)
-              echo "Crate ${CRATE_NAME} ${CRATE_VERSION} is not published yet"
-              echo "published=false" >> "${GITHUB_OUTPUT}"
-              ;;
-            *)
-              echo "Could not determine crates.io status for ${CRATE_NAME} ${CRATE_VERSION}: HTTP ${status}"
-              cat "${RUNNER_TEMP}/crate.json"
-              exit 1
-              ;;
-          esac
-
-      - name: Validate crate publish
-        if: ${{ steps.existing.outputs.published != 'true' }}
-        env:
-          CRATE_NAME: ${{ steps.crate.outputs.name }}
-        run: cargo publish --dry-run --package "${CRATE_NAME}" --registry crates-io --locked
-
       - name: Authenticate with crates.io
         id: crates-io-auth
-        if: ${{ steps.existing.outputs.published != 'true' }}
         continue-on-error: true
         uses: rust-lang/crates-io-auth-action@v1
 
-      - name: Require crates.io authentication token
-        if: ${{ steps.existing.outputs.published != 'true' }}
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
-        run: |
-          if [[ -z "${CARGO_REGISTRY_TOKEN}" ]]; then
-            echo "crates.io trusted publishing did not provide a token"
-            exit 1
-          fi
-
       - name: Publish crate
-        if: ${{ steps.existing.outputs.published != 'true' }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
-          CRATE_NAME: ${{ steps.crate.outputs.name }}
-        run: cargo publish --package "${CRATE_NAME}" --registry crates-io --locked
+        run: mise run crates-io:publish

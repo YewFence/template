@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 from template_tool import TemplateError, TemplateRepository
+from template_tool.application import prepare_template
 
 
 class TemplateRepositoryTest(unittest.TestCase):
@@ -34,7 +35,9 @@ class TemplateRepositoryTest(unittest.TestCase):
             "[templates.example.instantiation.tokens]\n"
             'PROJECT_NAME = "project_name"\n'
             "[templates.example.instantiation.validation.metadata]\n"
-            'project_name = "Example Project"\n',
+            'project_name = "Example Project"\n'
+            "[templates.example.instantiation.export.metadata]\n"
+            'project_name = "REPLACE ME: project name"\n',
             encoding="utf-8",
         )
 
@@ -497,10 +500,23 @@ class TemplateRepositoryTest(unittest.TestCase):
             'required = ["project_name"]\n'
             "[templates.example.instantiation.tokens]\n"
             'PROJECT_NAME = "project_name"\n'
-            "[templates.example.instantiation.validation.metadata]\n",
+            "[templates.example.instantiation.validation.metadata]\n"
+            "[templates.example.instantiation.export.metadata]\n"
+            'project_name = "REPLACE ME: project name"\n',
             encoding="utf-8",
         )
         with self.assertRaisesRegex(TemplateError, "missing required metadata"):
+            TemplateRepository(self.root)
+
+    def test_instantiation_profile_requires_complete_export_metadata(self) -> None:
+        self.write_config()
+        config = (self.root / "templates.toml").read_text(encoding="utf-8")
+        (self.root / "templates.toml").write_text(
+            config.replace('project_name = "REPLACE ME: project name"\n', ""),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(TemplateError, "invalid export metadata"):
             TemplateRepository(self.root)
 
     def test_renovate_module_generates_root_and_template_configs(self) -> None:
@@ -737,6 +753,52 @@ class TemplateRepositoryTest(unittest.TestCase):
                         )
                     )
 
+    def test_export_metadata_instantiates_every_profile_and_derived_value(self) -> None:
+        repository_root = Path(__file__).resolve().parents[3]
+        repository = TemplateRepository(repository_root)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output_root = Path(temporary)
+            for template in ("common", "go-cli", "rust"):
+                with self.subTest(template=template):
+                    metadata = repository.export_metadata(template)
+                    if template == "rust":
+                        metadata["description"] = 'Replace "this" description'
+                    output = output_root / template
+                    prepare_template(
+                        repository,
+                        template,
+                        output,
+                        metadata=metadata,
+                    )
+
+                    for path in output.rglob("*"):
+                        self.assertNotRegex(
+                            str(path.relative_to(output)), r"\{\{[A-Z]"
+                        )
+                        if path.is_file():
+                            try:
+                                content = path.read_text(encoding="utf-8")
+                            except UnicodeDecodeError:
+                                continue
+                            self.assertNotRegex(content, r"\{\{[A-Z]")
+
+                    if template == "go-cli":
+                        self.assertTrue(
+                            (output / "cmd/replace-me-binary/main.go").is_file()
+                        )
+                        self.assertEqual(
+                            (output / "go.mod").read_text(encoding="utf-8").splitlines()[0],
+                            "module example.invalid/replace-me-module",
+                        )
+                    if template == "rust":
+                        cargo = (output / "Cargo.toml").read_text(encoding="utf-8")
+                        main = (output / "src/main.rs").read_text(encoding="utf-8")
+                        docs = (output / "docs/index.md").read_text(encoding="utf-8")
+                        self.assertIn('description = "Replace \\"this\\" description"', cargo)
+                        self.assertIn("replace_me_package::greeting", main)
+                        self.assertIn('text: "Replace \\"this\\" description"', docs)
+
     def test_rust_crates_io_publish_capability_renders_complete_variants(self) -> None:
         repository_root = Path(__file__).resolve().parents[3]
         repository = TemplateRepository(repository_root)
@@ -779,17 +841,38 @@ class TemplateRepositoryTest(unittest.TestCase):
             disabled_mise = (disabled / "mise.ci.toml").read_text()
             enabled_mise = (enabled / "mise.ci.toml").read_text()
             self.assertNotIn("crates-io:package:check", disabled_mise)
+            self.assertNotIn("crates-io:publish", disabled_mise)
+            self.assertNotIn('jq = "1"', disabled_mise)
             self.assertIn('[tasks."crates-io:package:check"]', enabled_mise)
             self.assertIn('run = "cargo package --locked"', enabled_mise)
+            self.assertIn('[tasks."crates-io:publish"]', enabled_mise)
+            self.assertIn('file = "scripts/publish-crate"', enabled_mise)
+            self.assertIn('jq = "1"', enabled_mise)
+
+            disabled_publish_script = disabled / "scripts/publish-crate"
+            publish_script = enabled / "scripts/publish-crate"
+            self.assertFalse(disabled_publish_script.exists())
+            self.assertTrue(publish_script.stat().st_mode & stat.S_IXUSR)
+            publish_script_text = publish_script.read_text()
+            self.assertIn(
+                "cargo metadata --locked --no-deps --format-version 1",
+                publish_script_text,
+            )
+            self.assertIn("https://crates.io/api/v1/crates/", publish_script_text)
+            self.assertIn("cargo publish --dry-run", publish_script_text)
+            self.assertIn(
+                "crates.io trusted publishing did not provide a token",
+                publish_script_text,
+            )
 
             disabled_ci = (disabled / ".github/workflows/ci.yml").read_text()
             enabled_ci = (enabled / ".github/workflows/ci.yml").read_text()
             self.assertNotIn("crates-io:package:check", disabled_ci)
-            self.assertIn("mise -E ci run crates-io:package:check", enabled_ci)
+            self.assertIn("mise run crates-io:package:check", enabled_ci)
             self.assertIn("github.event_name == 'pull_request'", enabled_ci)
 
             self.assertFalse((disabled / "CRATES_IO_PUBLISHING.md").exists())
-            self.assertTrue((enabled / "CRATES_IO_PUBLISHING.md").is_file())
+            self.assertFalse((enabled / "CRATES_IO_PUBLISHING.md").exists())
 
             release = (enabled / ".github/workflows/release.yml").read_text()
             disabled_release = (disabled / ".github/workflows/release.yml").read_text()
@@ -797,19 +880,19 @@ class TemplateRepositoryTest(unittest.TestCase):
             self.assertNotIn("  publish-crate:\n", disabled_release)
             self.assertIn("  publish-crate:\n", release)
             self.assertIn("needs: [version, build, release]", release)
-            self.assertIn("cargo metadata --locked --no-deps --format-version 1", release)
-            self.assertIn("https://crates.io/api/v1/crates/", release)
-            self.assertIn("cargo publish --dry-run", release)
+            self.assertNotIn("cargo metadata", release)
+            self.assertNotIn("https://crates.io/api/v1/crates/", release)
+            self.assertNotIn("cargo publish", release)
             self.assertIn("continue-on-error: true", release)
             self.assertIn("rust-lang/crates-io-auth-action@v1", release)
-            self.assertIn("crates.io trusted publishing did not provide a token", release)
+            self.assertIn("run: mise run crates-io:publish", release)
             self.assertLess(
                 release.index("  publish-crate:\n"),
                 release.index("  close-superseded-release-pr:\n"),
             )
             self.assertLess(
-                release.index("- name: Require crates.io authentication token"),
-                release.index('run: cargo publish --package "${CRATE_NAME}" --registry crates-io --locked'),
+                release.index("uses: rust-lang/crates-io-auth-action@v1"),
+                release.index("run: mise run crates-io:publish"),
             )
 
 

@@ -125,17 +125,40 @@ class ValidationAdapterTest(unittest.TestCase):
             ci_lines.extend(
                 (
                     "      - name: Check crates.io package",
-                    "        run: mise -E ci run crates-io:package:check",
+                    "        run: mise run crates-io:package:check",
                 )
             )
         (template_root / ".github/workflows/ci.yml").write_text(
             "\n".join(ci_lines) + "\n", encoding="utf-8"
+        )
+        release_lines = ["jobs:", "  release:"]
+        if profile == "rust" and crates_io_enabled:
+            release_lines.extend(
+                (
+                    "  publish-crate:",
+                    "      - name: Publish crate",
+                    "        run: mise run crates-io:publish",
+                )
+            )
+            scripts_directory = template_root / "scripts"
+            scripts_directory.mkdir()
+            publish_script = scripts_directory / "publish-crate"
+            publish_script.write_text("#!/bin/sh\n", encoding="utf-8")
+            publish_script.chmod(0o755)
+        (template_root / ".github/workflows/release.yml").write_text(
+            "\n".join(release_lines) + "\n", encoding="utf-8"
         )
         tool_lines = ["[tools]", 'python = "3.14"']
         if docs_enabled:
             tool_lines.extend(('node = "26"', 'pnpm = "11"'))
         (template_root / "mise.toml").write_text(
             "\n".join(tool_lines) + "\n", encoding="utf-8"
+        )
+        ci_tool_lines = ["[tools]", 'git-cliff = "latest"']
+        if profile == "rust" and crates_io_enabled:
+            ci_tool_lines.append('jq = "1"')
+        (template_root / "mise.ci.toml").write_text(
+            "\n".join(ci_tool_lines) + "\n", encoding="utf-8"
         )
         (template_root / "tracked").write_text("tracked\n", encoding="utf-8")
 
@@ -148,6 +171,11 @@ class ValidationAdapterTest(unittest.TestCase):
         )
         subprocess.run(
             ["git", "config", "user.name", "Test"], cwd=template_root, check=True
+        )
+        subprocess.run(
+            ["git", "config", "commit.gpgsign", "false"],
+            cwd=template_root,
+            check=True,
         )
         subprocess.run(["git", "add", "--all"], cwd=template_root, check=True)
         subprocess.run(
@@ -176,7 +204,7 @@ class ValidationAdapterTest(unittest.TestCase):
                 )
             )
         if profile == "rust" and "crates-io-publish" in enabled_capabilities:
-            tasks.append("crates-io:package:check")
+            tasks.extend(("crates-io:package:check", "crates-io:publish"))
         path.write_text(
             "#!/bin/sh\n"
             "set -eu\n"

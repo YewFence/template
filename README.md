@@ -2,11 +2,39 @@
 
 这个 monorepo 是 `common`、`go-cli` 和 `rust` 三个工程模板的唯一事实来源。`shared/` 与 `overlays/` 保存可编辑来源，`templates/<name>/` 保存完整、自包含的默认 template capability 集合预览；应用器始终从 selected ref 的来源重新渲染。
 
-Template capability 在 project instantiation 前选择，改变交付行为但不成为 project identity metadata。`init-project`、`apply-template` 和 staging validation 共用 selected-ref 合同验证、capability resolve、隔离 render 与 metadata instantiation 的模板准备内核，准备完成前不会触碰目标仓库。
+Template capability 在 project instantiation 前选择，改变交付行为但不成为 project identity metadata。`init-project`、`apply-template`、`export-template` 和 staging validation 共用 selected-ref 合同验证、capability resolve、隔离 render 与 metadata instantiation 的模板准备内核；其中 export 只生成独立候选树，不会触碰已有项目。
 
 正式仓库地址固定为 `https://github.com/YewFence/template.git`，默认分支为 `main`。仓库创建前可以在本地完成维护和验证；远程应用、公开 tag 与 GitHub Release 必须等该仓库可访问后再演练。
 
 架构、有效决策、活跃计划和历史记录统一收录在 [`docs/`](docs/README.md)。仓库开发规则和维护流程见 [`AGENTS.md`](AGENTS.md)。
+
+## 导出候选树
+
+只想查看某个 selected ref、template profile 与 capability 集合的完整实例化结果时，使用 `export-template`。destination 不需要是 Git 仓库，但必须不存在或为空；成功后得到的是可人工比较、选择性复制的候选树，不代表已有项目已经更新。
+
+```bash
+uvx \
+  --from "git+https://github.com/YewFence/template.git@main#subdirectory=tools/template-tool" \
+  export-template \
+  --ref main \
+  --template rust \
+  ./rust-template-main
+```
+
+非交互导出使用 profile 的 capability 默认值和完整 export metadata，因此不要求完整项目身份。CLI 参数只覆盖指定字段：
+
+```bash
+uvx \
+  --from "git+https://github.com/YewFence/template.git@main#subdirectory=tools/template-tool" \
+  export-template \
+  --ref main \
+  --template rust \
+  --enable-capability crates-io-publish \
+  --cargo-package my-package \
+  ./rust-template-main
+```
+
+加 `--interactive` 会从当前 profile 默认值与 CLI 覆盖值开始，依次选择未显式覆盖的 capabilities、编辑每个 metadata 字段并确认完整汇总。拒绝、`Ctrl-C`、EOF、合同错误或实例化失败都不会创建或修改 destination。export 不创建 `.git`、不应用 protected-path filtering、不生成 dependency lockfile 或 GitHub Action digest，也不运行项目检查。等价的 umbrella 命令是 `template-tool export`。
 
 ## 应用到已有仓库
 
@@ -111,6 +139,8 @@ mise run check
 ```
 
 把生成的 `mise.lock`、`mise.ci.lock`、Go/Cargo 依赖状态、`docs/pnpm-lock.yaml` 以及 pinact 对 workflow 的修改与项目源码一起审查并提交。`docs:install` 用于首次解析和安装；日常 `docs:build`、`docs:dev` 与 `docs:preview` 只消费已提交锁文件。
+
+启用了 `crates-io-publish` capability 的 Rust 项目在首次发布前还需要配置 trusted publishing，具体步骤见 [Rust crates.io 发布指南](docs/guides/rust-crates-io-publishing.md)。这份一次性使用指南由 monorepo 维护，不会进入生成项目。
 
 ## Bash fallback
 

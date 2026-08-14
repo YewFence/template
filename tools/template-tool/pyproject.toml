@@ -17,6 +17,7 @@ render-template = "template_tool.cli:render_main"
 check-templates = "template_tool.cli:check_main"
 apply-template = "template_tool.bootstrap:apply_main"
 init-project = "template_tool.bootstrap:init_main"
+export-template = "template_tool.bootstrap:export_main"
 list-template-capabilities = "template_tool.bootstrap:capabilities_main"
 
 [build-system]

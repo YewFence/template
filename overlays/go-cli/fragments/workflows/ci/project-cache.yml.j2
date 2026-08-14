@@ -1,4 +1,4 @@
-      - uses: actions/cache@v6.1.0
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cache/go-build
@@ -6,4 +6,3 @@
           key: go-ci-${{ runner.os }}-${{ hashFiles('go.sum') }}
           restore-keys: |
             go-ci-${{ runner.os }}-
-

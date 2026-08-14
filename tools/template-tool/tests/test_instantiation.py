@@ -21,6 +21,7 @@ class InstantiationTest(unittest.TestCase):
             tokens={"PROJECT_NAME": "project_name", "PROJECT_DESCRIPTION": "description", "BINARY_NAME": "binary_name"},
             derived={"PROJECT_DESCRIPTION_JSON": ("description", "json-string")},
             validation_metadata={"project_name": "Example", "description": "Hello", "binary_name": "example"},
+            export_metadata={"project_name": "Replace Me", "description": "Replace me", "binary_name": "replace-me"},
         )
 
     def tearDown(self) -> None:

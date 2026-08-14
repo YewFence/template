@@ -33,13 +33,13 @@
       RELEASE_TARGET: ${{ matrix.target }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ needs.version.outputs.checkout_ref }}
 
       - name: Setup mise
-        uses: jdx/mise-action@v4.2.4
+        uses: jdx/mise-action@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           install_args: rust
@@ -47,7 +47,7 @@
           cache_key: "mise-release-${{ matrix.target }}-{{install_args_hash}}-{{file_hash}}"
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2.9.1
+        uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
 
@@ -55,7 +55,7 @@
         run: mise run release:package
 
       - name: Upload release archive
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.platform }}
           path: dist/*.tar.gz

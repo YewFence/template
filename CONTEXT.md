@@ -32,6 +32,10 @@ _Avoid_: Fuzzy major, latest version, exact pin
 The one-time transformation from a generic template blueprint into a project-specific tree, including project identity tokens and language-specific names or module paths. It belongs to the external template tool rather than the delivered project's mise tasks; `init-project` performs it for new repositories, while `apply-template` does not rewrite an existing project's identity.
 _Avoid_: Template init task, project bootstrap, dependency bootstrap
 
+**Template export**:
+The materialization of a selected template ref, profile, capability set, and metadata defaults into a standalone candidate tree for manual comparison and selective copying. It does not inspect or modify an existing project and does not promise template upgrade semantics.
+_Avoid_: Quick init, template update, project upgrade
+
 **Validation adapter**:
 A monorepo-only mise task under a template overlay that generates disposable dependency state and then runs the staged template's own checks. It is not part of the template deliverable.
 _Avoid_: Lock updater, template check

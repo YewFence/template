@@ -14,11 +14,13 @@ from template_tool.application import (
     ApplicationError,
     apply_selected_template,
     apply_template,
+    export_template,
     initialize_project,
     select_template,
 )
 from template_tool.bootstrap import capabilities_main as bootstrap_capabilities_main
-from template_tool.cli import apply_main, capabilities_main, init_main, main
+from template_tool.bootstrap import export_main as bootstrap_export_main
+from template_tool.cli import apply_main, capabilities_main, export_main, init_main, main
 
 
 class ApplyTemplateTest(unittest.TestCase):
@@ -80,7 +82,10 @@ class ApplyTemplateTest(unittest.TestCase):
             'transform = "json-string"\n'
             "[templates.example.instantiation.validation.metadata]\n"
             'project_name = "Validation Project"\n'
-            'binary_name = "validation-project"\n',
+            'binary_name = "validation-project"\n'
+            "[templates.example.instantiation.export.metadata]\n"
+            'project_name = "REPLACE ME: project name"\n'
+            'binary_name = "replace-me-binary"\n',
             encoding="utf-8",
         )
         source_root = self.source / "overlays/example/static"
@@ -664,6 +669,226 @@ class ApplyTemplateTest(unittest.TestCase):
                 "--template",
                 "example",
                 "--json",
+            ]
+        )
+
+    def test_noninteractive_export_uses_defaults_overrides_and_capabilities(self) -> None:
+        stdout = StringIO()
+
+        with redirect_stdout(stdout):
+            export_main(
+                [
+                    str(self.target),
+                    "--repo",
+                    str(self.source),
+                    "--ref",
+                    "main",
+                    "--template",
+                    "example",
+                    "--project-name",
+                    'CLI "Project"',
+                    "--enable-capability",
+                    "release",
+                    "--source-checkout",
+                    str(self.source),
+                ]
+            )
+
+        self.assertEqual(
+            (self.target / "project.toml").read_text(encoding="utf-8"),
+            'name = "CLI \\"Project\\""\nenabled = true\n',
+        )
+        self.assertEqual(
+            (self.target / "cmd/replace-me-binary/main.txt").read_text(
+                encoding="utf-8"
+            ),
+            'CLI "Project"\n',
+        )
+        self.assertTrue((self.target / "release.txt").is_file())
+        self.assertFalse((self.target / "docs.txt").exists())
+        self.assertFalse((self.target / ".git").exists())
+        self.assertFalse((self.target / "template-export.json").exists())
+        for path in self.target.rglob("*"):
+            self.assertNotRegex(str(path.relative_to(self.target)), r"\{\{[A-Z]")
+            if path.is_file():
+                self.assertNotRegex(path.read_text(encoding="utf-8"), r"\{\{[A-Z]")
+        self.assertIn("Capabilities: release\n", stdout.getvalue())
+        self.assertIn(f"Destination: {self.target.resolve()}\n", stdout.getvalue())
+        self.assertIn("manual comparison and selective copying", stdout.getvalue())
+        self.assertIn("unbootstrapped", stdout.getvalue())
+
+    @mock.patch("template_tool.cli.questionary.text")
+    @mock.patch("template_tool.cli.questionary.confirm")
+    def test_interactive_export_edits_every_metadata_value_and_confirms_summary(
+        self, confirm: mock.Mock, text: mock.Mock
+    ) -> None:
+        events: list[str] = []
+
+        def confirm_prompt(message: str, *, default: bool) -> mock.Mock:
+            events.append(f"confirm:{message}")
+            return mock.Mock(ask=mock.Mock(return_value=True))
+
+        def text_prompt(message: str, *, default: str) -> mock.Mock:
+            events.append(f"text:{message}:{default}")
+            value = 'Edited "Project"' if message == "Project Name" else default
+            return mock.Mock(ask=mock.Mock(return_value=value))
+
+        confirm.side_effect = confirm_prompt
+        text.side_effect = text_prompt
+
+        export_main(
+            [
+                str(self.target),
+                "--repo",
+                str(self.source),
+                "--ref",
+                "main",
+                "--template",
+                "example",
+                "--project-name",
+                "CLI Project",
+                "--enable-capability",
+                "release",
+                "--interactive",
+                "--source-checkout",
+                str(self.source),
+            ]
+        )
+
+        self.assertEqual(
+            [event.split(":", 1)[0] for event in events],
+            ["confirm", "text", "text", "confirm"],
+        )
+        self.assertIn("docs-site", events[0])
+        self.assertNotIn("release", events[0])
+        self.assertIn("Project Name:CLI Project", events[1])
+        self.assertIn("Binary Name:replace-me-binary", events[2])
+        self.assertIn(f"Repository: {self.source}", events[-1])
+        self.assertIn("Template-Commit:", events[-1])
+        self.assertIn("Capabilities: docs-site, release", events[-1])
+        self.assertIn(f"Destination: {self.target.resolve()}", events[-1])
+        self.assertEqual(
+            (self.target / "cmd/replace-me-binary/main.txt").read_text(
+                encoding="utf-8"
+            ),
+            'Edited "Project"\n',
+        )
+        self.assertTrue((self.target / "docs.txt").is_file())
+        self.assertTrue((self.target / "release.txt").is_file())
+
+    @mock.patch("template_tool.cli.questionary.text")
+    @mock.patch("template_tool.cli.questionary.confirm")
+    def test_interactive_export_cancel_preserves_empty_destination(
+        self, confirm: mock.Mock, text: mock.Mock
+    ) -> None:
+        self.target.mkdir()
+        text.side_effect = lambda message, *, default: mock.Mock(
+            ask=mock.Mock(return_value=default)
+        )
+        confirm.return_value.ask.return_value = False
+
+        with self.assertRaises(SystemExit) as raised:
+            export_main(
+                [
+                    str(self.target),
+                    "--repo",
+                    str(self.source),
+                    "--ref",
+                    "main",
+                    "--template",
+                    "example",
+                    "--disable-capability",
+                    "docs-site",
+                    "--disable-capability",
+                    "release",
+                    "--interactive",
+                    "--source-checkout",
+                    str(self.source),
+                ]
+            )
+
+        self.assertEqual(raised.exception.code, 1)
+        self.assertTrue(self.target.is_dir())
+        self.assertEqual(tuple(self.target.iterdir()), ())
+
+    def test_export_rejects_nonempty_destination_before_selection(self) -> None:
+        self.target.mkdir()
+        sentinel = self.target / "sentinel.txt"
+        sentinel.write_text("unchanged\n", encoding="utf-8")
+        stderr = StringIO()
+
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            export_main(
+                [
+                    str(self.target),
+                    "--repo",
+                    str(self.source),
+                    "--ref",
+                    "main",
+                    "--template",
+                    "example",
+                ]
+            )
+
+        self.assertEqual(raised.exception.code, 1)
+        self.assertIn("not empty", stderr.getvalue())
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "unchanged\n")
+
+    def test_export_instantiation_failure_preserves_empty_destination(self) -> None:
+        self.target.mkdir()
+
+        with self.assertRaisesRegex(ApplicationError, "missing required metadata"):
+            export_template(
+                str(self.source),
+                "main",
+                "example",
+                self.target,
+                {"project_name": "Incomplete"},
+            )
+
+        self.assertTrue(self.target.is_dir())
+        self.assertEqual(tuple(self.target.iterdir()), ())
+
+    @mock.patch("template_tool.bootstrap._run_selected_engine")
+    def test_export_bootstrap_uses_selected_ref_engine(
+        self, run_selected_engine: mock.Mock
+    ) -> None:
+        arguments = [str(self.target), "--ref", "main", "--template", "example"]
+
+        bootstrap_export_main(arguments)
+
+        run_selected_engine.assert_called_once_with("export", arguments, export_main)
+
+    @mock.patch("template_tool.bootstrap.export_main")
+    def test_umbrella_export_uses_selected_ref_engine(
+        self, run_selected_export: mock.Mock
+    ) -> None:
+        main(
+            [
+                "export",
+                str(self.target),
+                "--repo",
+                str(self.source),
+                "--ref",
+                "main",
+                "--template",
+                "example",
+                "--enable-capability",
+                "release",
+            ]
+        )
+
+        run_selected_export.assert_called_once_with(
+            [
+                str(self.target),
+                "--repo",
+                str(self.source),
+                "--ref",
+                "main",
+                "--template",
+                "example",
+                "--enable-capability",
+                "release",
             ]
         )
 

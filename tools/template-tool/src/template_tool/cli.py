@@ -16,6 +16,8 @@ from .application import (
     ApplicationError,
     apply_selected_template,
     ApplyResult,
+    export_selected_template,
+    ExportResult,
     initialize_selected_project,
     prepare_template,
     required_metadata,
@@ -23,6 +25,7 @@ from .application import (
     select_template,
     selected_template_from_source,
     validate_apply_target,
+    validate_export_destination,
 )
 from .instantiation import InstantiationError, validate_metadata_value
 from .repository import TemplateError, TemplateRepository
@@ -373,6 +376,30 @@ def _metadata_from_args(args: argparse.Namespace) -> dict[str, str]:
     }
 
 
+def _edit_metadata_for_fields(
+    required: tuple[str, ...], current: dict[str, str]
+) -> dict[str, str]:
+    metadata = dict(current)
+    try:
+        for field in required:
+            while True:
+                value = questionary.text(
+                    field.replace("_", " ").title(), default=metadata[field]
+                ).ask()
+                if value is None:
+                    raise ApplicationError("interactive metadata editing cancelled")
+                try:
+                    validate_metadata_value(field, value)
+                except InstantiationError as error:
+                    print(f"error: {error}", file=sys.stderr)
+                    continue
+                metadata[field] = value
+                break
+    except (KeyboardInterrupt, EOFError):
+        raise ApplicationError("interactive metadata editing cancelled") from None
+    return metadata
+
+
 def _collect_metadata(
     repository: str,
     reference: str,
@@ -535,6 +562,123 @@ def init_main(argv: list[str] | None = None) -> None:
         raise SystemExit(1)
 
 
+def _export_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="export-template")
+    parser.add_argument("destination", type=Path)
+    parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
+    parser.add_argument("--ref", required=True, help="Git ref to fetch")
+    parser.add_argument("--template", required=True, help="template name")
+    parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
+    _metadata_arguments(parser)
+    _capability_arguments(parser)
+    parser.add_argument("--interactive", action="store_true")
+    return parser
+
+
+def export_main(argv: list[str] | None = None) -> None:
+    args = _export_parser().parse_args(argv)
+    overrides = _metadata_from_args(args)
+    try:
+        validate_export_destination(args.destination)
+        selected = (
+            selected_template_from_source(args.repo, args.ref, args.source_checkout)
+            if args.source_checkout is not None
+            else None
+        )
+        if selected is not None:
+            result = _export_with_selected(selected, args, overrides)
+        else:
+            with tempfile.TemporaryDirectory(prefix="export-template-") as temporary:
+                with select_template(args.repo, args.ref, Path(temporary)) as selected:
+                    result = _export_with_selected(selected, args, overrides)
+    except ApplicationError as error:
+        print(f"error: {error}", file=sys.stderr)
+        raise SystemExit(1) from error
+    except subprocess.CalledProcessError as error:
+        message = error.stderr.strip() if isinstance(error.stderr, str) else ""
+        detail = f": {message}" if message else ""
+        print(
+            f"error: command failed with exit code {error.returncode}: {error.cmd}{detail}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from error
+    _print_export_result(result)
+
+
+def _export_with_selected(
+    selected: SelectedTemplate,
+    args: argparse.Namespace,
+    overrides: dict[str, str],
+) -> ExportResult:
+    metadata = selected.export_metadata(args.template) | overrides
+    capabilities = _resolve_interactive_selection(
+        selected,
+        args.template,
+        enable=tuple(args.enable_capability),
+        disable=tuple(args.disable_capability),
+        interactive=args.interactive,
+    )
+    if args.interactive:
+        metadata = _edit_metadata_for_fields(
+            selected.required_metadata(args.template), metadata
+        )
+        _confirm_export_selection(
+            selected,
+            args.template,
+            capabilities,
+            metadata,
+            args.destination.resolve(),
+        )
+    return export_selected_template(
+        selected,
+        args.template,
+        args.destination,
+        metadata,
+        enabled_capabilities=capabilities,
+    )
+
+
+def _confirm_export_selection(
+    selected: SelectedTemplate,
+    template: str,
+    capabilities: tuple[str, ...],
+    metadata: dict[str, str],
+    destination: Path,
+) -> None:
+    lines = [
+        f"Repository: {selected.repository}",
+        f"Ref: {selected.reference}",
+        f"Template-Commit: {selected.commit}",
+        f"Template: {template}",
+        f"Capabilities: {', '.join(capabilities) or '(none)'}",
+    ]
+    lines.extend(f"{field}: {value}" for field, value in metadata.items())
+    lines.append(f"Destination: {destination}")
+    try:
+        confirmed = questionary.confirm(
+            "Confirm export?\n" + "\n".join(lines), default=True
+        ).ask()
+    except (KeyboardInterrupt, EOFError):
+        raise ApplicationError("interactive export cancelled") from None
+    if confirmed is not True:
+        raise ApplicationError("interactive export cancelled")
+
+
+def _print_export_result(result: ExportResult) -> None:
+    print(f"Repository: {result.repository}")
+    print(f"Template: {result.template}")
+    print(f"Ref: {result.reference}")
+    print(f"Template-Commit: {result.commit}")
+    print(f"Capabilities: {', '.join(result.capabilities) or '(none)'}")
+    print(f"Destination: {result.destination}")
+    print(
+        "HINT: this candidate tree is only for manual comparison and selective copying; no existing project was updated."
+    )
+    print(
+        "HINT: the exported tree is unbootstrapped and does not include generated dependency or GitHub Action lock state."
+    )
+
+
 def _print_apply_result(result: ApplyResult) -> None:
     print(f"Repository: {result.repository}")
     print(f"Template: {result.template}")
@@ -658,6 +802,15 @@ def main(argv: list[str] | None = None) -> None:
     _capability_arguments(init_parser)
     init_parser.add_argument("--interactive", action="store_true")
     init_parser.add_argument("--keep-tokens", action="store_true")
+    export_parser = subparsers.add_parser("export")
+    export_parser.add_argument("destination", type=Path)
+    export_parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
+    export_parser.add_argument("--ref", required=True)
+    export_parser.add_argument("--template", required=True)
+    export_parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
+    _metadata_arguments(export_parser)
+    _capability_arguments(export_parser)
+    export_parser.add_argument("--interactive", action="store_true")
     capabilities_parser = subparsers.add_parser("capabilities")
     capabilities_parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
     capabilities_parser.add_argument("--ref", required=True)
@@ -721,6 +874,34 @@ def main(argv: list[str] | None = None) -> None:
             from .bootstrap import capabilities_main as run_selected_capabilities
 
             run_selected_capabilities(forwarded)
+        return
+    if args.command == "export":
+        forwarded = [
+            str(args.destination),
+            "--repo",
+            args.repo,
+            "--ref",
+            args.ref,
+            "--template",
+            args.template,
+        ]
+        for option in ("project-name", "description", "github-owner", "repo-name", "go-module", "cargo-package", "binary-name"):
+            value = getattr(args, option.replace("-", "_"))
+            if value is not None:
+                forwarded.extend([f"--{option}", value])
+        if args.interactive:
+            forwarded.append("--interactive")
+        for capability in args.enable_capability:
+            forwarded.extend(["--enable-capability", capability])
+        for capability in args.disable_capability:
+            forwarded.extend(["--disable-capability", capability])
+        if args.source_checkout is not None:
+            forwarded.extend(["--source-checkout", str(args.source_checkout)])
+            export_main(forwarded)
+        else:
+            from .bootstrap import export_main as run_selected_export
+
+            run_selected_export(forwarded)
         return
     forwarded = []
     if args.template:

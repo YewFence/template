@@ -35,6 +35,11 @@ hints = [
  description = "Example project description"
  github_owner = "YewFence"
  repo_name = "example-project"
+ [templates.common.instantiation.export.metadata]
+ project_name = "REPLACE ME: project name"
+ description = "REPLACE ME: project description"
+ github_owner = "replace-me-owner"
+ repo_name = "replace-me-repository"
  [templates.common.slots."mise.ci.toml"]
  audit_tasks = ["shared:mise/ci/common-audit.toml.j2"]
  release_package = ["shared:mise/ci/common-package.toml.j2"]
@@ -85,6 +90,13 @@ hints = [
  repo_name = "example-go-cli"
  go_module = "github.com/YewFence/example-go-cli"
  binary_name = "example-go-cli"
+ [templates.go-cli.instantiation.export.metadata]
+ project_name = "REPLACE ME: project name"
+ description = "REPLACE ME: project description"
+ github_owner = "replace-me-owner"
+ repo_name = "replace-me-repository"
+ go_module = "example.invalid/replace-me-module"
+ binary_name = "replace-me-binary"
  [templates.go-cli.slots."mise.ci.toml"]
  maintenance_tools = ["overlay:mise/ci/maintenance.toml.j2"]
  audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
@@ -149,12 +161,21 @@ hints = [
  repo_name = "example-rust-cli"
  cargo_package = "example-rust-cli"
  binary_name = "example-rust-cli"
+ [templates.rust.instantiation.export.metadata]
+ project_name = "REPLACE ME: project name"
+ description = "REPLACE ME: project description"
+ github_owner = "replace-me-owner"
+ repo_name = "replace-me-repository"
+ cargo_package = "replace-me-package"
+ binary_name = "replace-me-binary"
  [templates.rust.slots."mise.ci.toml"]
  maintenance_tools = ["overlay:mise/ci/maintenance.toml.j2"]
+ crates_io_publish_tools = { capability = "crates-io-publish", fragments = ["overlay:mise/ci/crates-io-publish-tools.toml.j2"] }
  audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
  release_version_tasks = ["overlay:mise/ci/release-version.toml.j2"]
  release_package = ["overlay:mise/ci/package.toml.j2"]
  crates_io_package_check = { capability = "crates-io-publish", fragments = ["overlay:mise/ci/crates-io-package-check.toml.j2"] }
+ crates_io_publish_task = { capability = "crates-io-publish", fragments = ["overlay:mise/ci/crates-io-publish.toml.j2"] }
  [templates.rust.slots."mise.toml"]
  docs_tools = { capability = "docs-site", fragments = ["shared:mise/docs-tools.toml.j2"] }
  docs_tasks = { capability = "docs-site", fragments = ["shared:mise/docs-tasks.toml.j2"] }
@@ -167,7 +188,7 @@ hints = [
  docs_ignored_paths = { capability = "docs-site", fragments = ["shared:docs-ignored-paths.j2"] }
  [templates.rust.capability_outputs]
  docs-site = ["docs/", ".github/workflows/docs.yml"]
- crates-io-publish = ["CRATES_IO_PUBLISHING.md"]
+ crates-io-publish = ["scripts/publish-crate"]
  [templates.rust.slots."Cargo.toml"]
  package_publish = { capability = "crates-io-publish", default_fragments = ["overlay:cargo/publish-disabled.toml.j2"], fragments = ["overlay:cargo/publish-crates-io.toml.j2"] }
  [templates.rust.slots.".github/workflows/ci.yml"]

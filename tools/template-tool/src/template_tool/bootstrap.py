@@ -10,6 +10,7 @@ from pathlib import Path
 from .application import DEFAULT_REPOSITORY
 from .cli import apply_main as run_apply
 from .cli import capabilities_main as run_capabilities
+from .cli import export_main as run_export
 from .cli import init_main as run_init
 
 
@@ -26,6 +27,14 @@ def capabilities_main(argv: list[str] | None = None) -> None:
         "capabilities",
         list(sys.argv[1:] if argv is None else argv),
         run_capabilities,
+    )
+
+
+def export_main(argv: list[str] | None = None) -> None:
+    _run_selected_engine(
+        "export",
+        list(sys.argv[1:] if argv is None else argv),
+        run_export,
     )
 
 

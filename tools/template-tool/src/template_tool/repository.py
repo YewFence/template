@@ -231,6 +231,9 @@ class TemplateRepository:
     def validation_metadata(self, template: str) -> dict[str, str]:
         return dict(self._profile(template).instantiation.validation_metadata)
 
+    def export_metadata(self, template: str) -> dict[str, str]:
+        return dict(self._profile(template).instantiation.export_metadata)
+
     def capabilities(self, template: str) -> tuple[tuple[str, bool], ...]:
         return tuple(sorted(self._profile(template).capabilities.items()))
 
@@ -379,6 +382,7 @@ class TemplateRepository:
             tokens = raw_instantiation.get("tokens")
             derived = raw_instantiation.get("derived", {})
             raw_validation = raw_instantiation.get("validation")
+            raw_export = raw_instantiation.get("export")
             if not isinstance(required, list) or not all(isinstance(field, str) and field for field in required):
                 raise TemplateError(f"templates.{name}.instantiation.required must be an array of strings")
             if len(set(required)) != len(required):
@@ -412,11 +416,26 @@ class TemplateRepository:
             validation_metadata = raw_validation.get("metadata")
             if not isinstance(validation_metadata, dict) or not all(isinstance(field, str) and isinstance(value, str) for field, value in validation_metadata.items()):
                 raise TemplateError(f"templates.{name}.instantiation.validation.metadata must be a string map")
-            unknown_instantiation = set(raw_instantiation) - {"required", "tokens", "derived", "validation"}
+            if not isinstance(raw_export, dict):
+                raise TemplateError(f"templates.{name}.instantiation.export must be a table")
+            export_metadata = raw_export.get("metadata")
+            if not isinstance(export_metadata, dict) or not all(isinstance(field, str) and isinstance(value, str) for field, value in export_metadata.items()):
+                raise TemplateError(f"templates.{name}.instantiation.export.metadata must be a string map")
+            unknown_export = set(raw_export) - {"metadata"}
+            if unknown_export:
+                keys = ", ".join(sorted(unknown_export))
+                raise TemplateError(f"unknown keys in templates.{name}.instantiation.export: {keys}")
+            unknown_instantiation = set(raw_instantiation) - {"required", "tokens", "derived", "validation", "export"}
             if unknown_instantiation:
                 keys = ", ".join(sorted(unknown_instantiation))
                 raise TemplateError(f"unknown keys in templates.{name}.instantiation: {keys}")
-            spec = InstantiationSpec(tuple(required), dict(tokens), derived_values, dict(validation_metadata))
+            spec = InstantiationSpec(
+                tuple(required),
+                dict(tokens),
+                derived_values,
+                dict(validation_metadata),
+                dict(export_metadata),
+            )
             referenced_fields = set(spec.tokens.values()) | {
                 source for source, _ in spec.derived.values()
             }
@@ -427,6 +446,11 @@ class TemplateRepository:
                 build_token_values(spec.validation_metadata, spec)
             except InstantiationError as error:
                 raise TemplateError(f"invalid validation metadata for {name}: {error}") from error
+            try:
+                validate_metadata(spec.export_metadata, spec)
+                build_token_values(spec.export_metadata, spec)
+            except InstantiationError as error:
+                raise TemplateError(f"invalid export metadata for {name}: {error}") from error
 
             profiles[name] = TemplateProfile(
                 name, capabilities, capability_outputs, path_rules, slots, spec

@@ -37,6 +37,7 @@ class InstantiationSpec:
     tokens: dict[str, str]
     derived: dict[str, tuple[str, str]]
     validation_metadata: dict[str, str]
+    export_metadata: dict[str, str]
 
 
 def validate_metadata(metadata: dict[str, str], spec: InstantiationSpec) -> None:

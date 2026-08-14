@@ -1,9 +1,9 @@
 [tools]
 git-cliff = "latest"
-<$ slot("maintenance_tools", optional=true) $>
+<$ slot("maintenance_tools", optional=true) $><$ slot("crates_io_publish_tools", optional=true) $>
 
 <$ slot("audit_tasks") $>
-<$ slot("crates_io_package_check", optional=true) $>
+<$ slot("crates_io_package_check", optional=true) $><$ slot("crates_io_publish_task", optional=true) $>
 
 [tasks.'actions:pin:check']
 # Need github token to avoid rate limit

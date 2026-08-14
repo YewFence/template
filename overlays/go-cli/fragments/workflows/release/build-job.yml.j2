@@ -22,20 +22,20 @@
           - goos: windows
             goarch: amd64
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ needs.version.outputs.checkout_ref }}
           fetch-depth: 0
 
-      - uses: jdx/mise-action@v4.2.4
+      - uses: jdx/mise-action@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           install_args: go
           add_shims_to_path: true
           cache_key: "mise-release-{{install_args_hash}}-{{file_hash}}"
 
-      - uses: actions/cache@v6.1.0
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cache/go-build
@@ -63,11 +63,10 @@
         run: mise run release:package
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: "binary-${{ matrix.goos }}-${{ matrix.goarch }}"
           path: |
             dist/*.tar.gz
             dist/*.zip
           if-no-files-found: error
-

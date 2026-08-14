@@ -37,7 +37,9 @@ class TemplateCapabilityTest(unittest.TestCase):
             "[templates.example.instantiation.tokens]\n"
             'PROJECT_NAME = "project_name"\n'
             "[templates.example.instantiation.validation.metadata]\n"
-            'project_name = "Example Project"\n',
+            'project_name = "Example Project"\n'
+            "[templates.example.instantiation.export.metadata]\n"
+            'project_name = "REPLACE ME: project name"\n',
             encoding="utf-8",
         )
 

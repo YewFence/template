@@ -88,7 +88,7 @@ monorepo 自身的维护环境与模板交付物分离。根 `mise.lock`、`tool
 
 Python 工具拥有临时目录、隔离环境、Git baseline、validation adapter 调用和清理。语言命令及其执行顺序由对应 validation adapter 拥有。
 
-`init-project`、`apply-template` 与 staging validation 共享 selected-ref source/profile load、完整合同验证、capability resolve、隔离 destination render 和 metadata instantiation。准备完成后三个入口才分别进入 initial commit 与完整 apply、protected-path filtering 与 squash apply、或者 disposable bootstrap 与检查。Staging 不通过两个应用 CLI 驱动 cases；入口的 Git 生命周期由各自 integration tests 覆盖。
+`init-project`、`apply-template`、`export-template` 与 staging validation 共享 selected-ref source/profile load、完整合同验证、capability resolve、隔离 destination render 和 metadata instantiation。准备完成后四个入口才分别进入 initial commit 与完整 apply、protected-path filtering 与 squash apply、同级 staging 的原子候选树发布、或者 disposable bootstrap 与检查。Staging 不通过应用 CLI 驱动 cases；入口的 Git 生命周期由各自 integration tests 覆盖。
 
 `sync:check` 与 staging validation 验证不同边界：前者验证来源能够确定性生成默认 blueprint preview，后者验证每个 capability 组合的 blueprint 实例化并完成依赖引导后能够通过项目检查。
 
@@ -101,6 +101,7 @@ Python 工具拥有临时目录、隔离环境、Git baseline、validation adapt
 - metadata 到 uppercase token 的映射；
 - 有限的声明式派生值；
 - 仅供 staging validation 使用的合成 metadata。
+- 面向使用者、覆盖全部 required metadata 的 export metadata。
 
 Capability selection 与 metadata 相互独立，并先于 project instantiation 完成。实例化引擎替换可识别 UTF-8 文本和相对路径组件中的显式 uppercase token。路径替换在执行前计算完整计划，拒绝越界、不安全组件和路径碰撞。当前派生 transform 包含 `hyphen-to-underscore`、`json-string` 与 `toml-basic-string`。
 
@@ -117,6 +118,8 @@ Capability selection 与 metadata 相互独立，并先于 project instantiation
 - `init-project` 完整应用实例化后的模板，包括 README、AGENTS、忽略规则和许可证。
 - `apply-template` 跳过 `templates.toml` 中声明的根级身份与工作区控制路径，并提示使用者人工比较；实例化只影响传入模板树。
 
+`export-template` 面向不修改任何现有项目的人工比较场景。它要求显式 `--ref` 与 `--template`，从 profile 默认 capability 集合和 `templates.toml` 中的 export metadata 开始应用 CLI 覆盖；交互模式最后编辑所有 metadata 字段。它把完整实例化树先写入 destination 同级 staging，所有准备成功后才原子发布到不存在或为空的 destination。它不要求、初始化或修改 Git 仓库，不创建临时模板 commit、index 或 manifest，不执行 protected-path filtering，也不承诺 diff、复制、合并、provenance 或升级协议。
+
 成功应用只留下 staged changes，不移动目标分支或创建提交。冲突时保留 index stages 和工作树现场，不创建 `MERGE_HEAD`。第一版不提供重复 apply、provenance 状态或模板升级协议。
 
 ## 自动化所有权
@@ -129,6 +132,6 @@ Capability selection 与 metadata 相互独立，并先于 project instantiation
 
 ## 文档所有权
 
-根 [`README.md`](../../README.md) 是模板使用者的统一入口，说明 `apply-template`、`init-project` 和依赖引导流程。
+根 [`README.md`](../../README.md) 是模板使用者的统一入口，说明 `export-template`、`apply-template`、`init-project` 和依赖引导流程。
 
 `overlays/<name>/static/README.md` 只描述对应生成项目的功能、结构和语言行为。模板维护架构、决策、计划与历史记录全部保存在根 `docs/`，不会进入生成项目。

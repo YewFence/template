@@ -3,8 +3,10 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
+import shutil
 import subprocess
 import tempfile
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -49,6 +51,16 @@ class InitProjectResult:
 
 
 @dataclass(frozen=True)
+class ExportResult:
+    repository: str
+    template: str
+    reference: str
+    commit: str
+    capabilities: tuple[str, ...]
+    destination: Path
+
+
+@dataclass(frozen=True)
 class SelectedTemplate:
     repository: str
     reference: str
@@ -61,6 +73,13 @@ class SelectedTemplate:
         try:
             self.templates.select(template)
             return self.templates.required_metadata(template)
+        except TemplateError as error:
+            raise ApplicationError(str(error)) from error
+
+    def export_metadata(self, template: str) -> dict[str, str]:
+        try:
+            self.templates.select(template)
+            return self.templates.export_metadata(template)
         except TemplateError as error:
             raise ApplicationError(str(error)) from error
 
@@ -291,9 +310,117 @@ def apply_template(
             )
 
 
+def export_template(
+    repository: str,
+    reference: str,
+    template: str,
+    destination: Path | str,
+    metadata: dict[str, str],
+    *,
+    enabled_capabilities: tuple[str, ...] | None = None,
+) -> ExportResult:
+    _validate_template_name(template)
+    destination_root = _validated_export_destination(Path(destination))
+    with tempfile.TemporaryDirectory(prefix="export-template-") as temporary:
+        with select_template(repository, reference, Path(temporary)) as selected:
+            return export_selected_template(
+                selected,
+                template,
+                destination_root,
+                metadata,
+                enabled_capabilities=enabled_capabilities,
+            )
+
+
+def export_selected_template(
+    selected: SelectedTemplate,
+    template: str,
+    destination: Path | str,
+    metadata: dict[str, str],
+    *,
+    enabled_capabilities: tuple[str, ...] | None = None,
+) -> ExportResult:
+    _validate_template_name(template)
+    destination_root = _validated_export_destination(Path(destination))
+    effective_capabilities = _effective_capabilities(
+        selected, template, enabled_capabilities
+    )
+    try:
+        destination_root.parent.mkdir(parents=True, exist_ok=True)
+        temporary = tempfile.mkdtemp(
+            prefix=f".{destination_root.name}.export-",
+            dir=destination_root.parent,
+        )
+    except OSError as error:
+        raise ApplicationError(
+            f"cannot create export staging beside destination: {destination_root}"
+        ) from error
+
+    staged = Path(temporary)
+    try:
+        selected.prepare(
+            template,
+            staged,
+            metadata=metadata,
+            enabled_capabilities=effective_capabilities,
+        )
+        _validated_export_destination(destination_root)
+        _publish_export(staged, destination_root)
+    finally:
+        if os.path.lexists(staged):
+            if staged.is_dir() and not staged.is_symlink():
+                shutil.rmtree(staged)
+            else:
+                staged.unlink()
+
+    return ExportResult(
+        repository=selected.repository,
+        template=template,
+        reference=selected.reference,
+        commit=selected.commit,
+        capabilities=effective_capabilities,
+        destination=destination_root,
+    )
+
+
+def validate_export_destination(destination: Path | str) -> None:
+    """Validate that a destination can safely receive an exported tree."""
+    _validated_export_destination(Path(destination))
+
+
 def validate_apply_target(target: Path | str) -> None:
     """Validate that a target repository can safely accept template changes."""
     _validated_apply_target_root(Path(target))
+
+
+def _validated_export_destination(destination: Path) -> Path:
+    destination_root = destination.resolve()
+    if not os.path.lexists(destination_root):
+        return destination_root
+    if destination_root.is_symlink() or not destination_root.is_dir():
+        raise ApplicationError(
+            f"export destination must not exist or must be an empty directory: {destination_root}"
+        )
+    try:
+        next(destination_root.iterdir())
+    except StopIteration:
+        return destination_root
+    raise ApplicationError(f"export destination is not empty: {destination_root}")
+
+
+def _publish_export(staged: Path, destination: Path) -> None:
+    backup = destination.parent / f".{destination.name}.backup-{uuid.uuid4().hex}"
+    destination_existed = os.path.lexists(destination)
+    try:
+        if destination_existed:
+            os.replace(destination, backup)
+        os.replace(staged, destination)
+    except OSError as error:
+        if destination_existed and os.path.lexists(backup):
+            os.replace(backup, destination)
+        raise ApplicationError(f"cannot publish export destination: {destination}") from error
+    if destination_existed:
+        backup.rmdir()
 
 
 def _effective_capabilities(

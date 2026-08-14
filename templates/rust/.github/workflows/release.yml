@@ -17,11 +17,6 @@ on:
         description: "Version tag to publish"
         required: true
         type: string
-      overwrite_latest_tag:
-        description: "Whether to overwrite the latest tag"
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -72,14 +67,14 @@ jobs:
           fi
 
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.merge_commit_sha || inputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Setup mise
-        uses: jdx/mise-action@v4.2.4
+        uses: jdx/mise-action@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           install_args: git-cliff
@@ -237,13 +232,13 @@ jobs:
       RELEASE_TARGET: ${{ matrix.target }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ needs.version.outputs.checkout_ref }}
 
       - name: Setup mise
-        uses: jdx/mise-action@v4.2.4
+        uses: jdx/mise-action@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           install_args: rust
@@ -251,7 +246,7 @@ jobs:
           cache_key: "mise-release-${{ matrix.target }}-{{install_args_hash}}-{{file_hash}}"
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2.9.1
+        uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
 
@@ -259,7 +254,7 @@ jobs:
         run: mise run release:package
 
       - name: Upload release archive
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.platform }}
           path: dist/*.tar.gz
@@ -279,13 +274,13 @@ jobs:
       MISE_ENV: "ci"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.version.outputs.checkout_ref }}
           fetch-depth: 0
 
       - name: Setup mise
-        uses: jdx/mise-action@v4.2.4
+        uses: jdx/mise-action@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           install_args: git-cliff
@@ -316,12 +311,11 @@ jobs:
           echo "path=${notes_file}" >> "${GITHUB_OUTPUT}"
 
       - name: Download release archives
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: dist
           merge-multiple: true
-
 
       - name: Create release tag
         if: ${{ needs.version.outputs.create_tag == 'true' }}
@@ -345,13 +339,14 @@ jobs:
           echo "| Release tag Created | \`false\` |"  >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Create release
-        uses: softprops/action-gh-release@v3.0.2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           body_path: ${{ steps.notes.outputs.path }}
           files: dist/*
 
           prerelease: ${{ needs.version.outputs.prerelease }}
+          make_latest: legacy
 
       - name: Summarize published release
         env:
@@ -361,29 +356,6 @@ jobs:
           release_url="$(gh release view "${RELEASE_TAG}" --json url --jq .url)"
           echo "Published GitHub Release ${release_url}"
           echo "| URL | ${release_url} |" >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Move latest tag
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.overwrite_latest_tag }}
-        env:
-          RELEASE_TAG: ${{ needs.version.outputs.tag }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch --tags --force
-
-          release_commit="$(git rev-list -n 1 "${RELEASE_TAG}")"
-          git tag -fa latest -m "latest -> ${RELEASE_TAG}" "${release_commit}"
-          git push --force origin refs/tags/latest
-          echo "Moved latest tag to ${RELEASE_TAG}"
-          {
-            echo "| Moved Latest Tag | \`${RELEASE_TAG}\` |"
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Record latest tag unchanged
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.overwrite_latest_tag != true }}
-        run: |
-          echo "latest tag was not moved"
-          echo "| Moved Latest Tag | \`skipped\` |" >> "${GITHUB_STEP_SUMMARY}"
 
 
 
