@@ -940,6 +940,92 @@ class TemplateRepositoryTest(unittest.TestCase):
                 release.index("run: mise run crates-io:publish"),
             )
 
+    def test_go_cli_container_image_publish_capability_renders_complete_variants(
+        self,
+    ) -> None:
+        repository_root = Path(__file__).resolve().parents[3]
+        repository = TemplateRepository(repository_root)
+        metadata = repository.validation_metadata("go-cli")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output_root = Path(temporary)
+            disabled = output_root / "disabled"
+            enabled = output_root / "enabled"
+            repository.render_to("go-cli", disabled, enabled_capabilities=())
+            repository.render_to(
+                "go-cli",
+                enabled,
+                enabled_capabilities=("container-image-publish",),
+            )
+            repository.instantiate("go-cli", disabled, metadata)
+            repository.instantiate("go-cli", enabled, metadata)
+
+            disabled_mise = (disabled / "mise.ci.toml").read_text()
+            enabled_mise = (enabled / "mise.ci.toml").read_text()
+            self.assertNotIn("container:build", disabled_mise)
+            self.assertNotIn("container:publish", disabled_mise)
+            self.assertNotIn("aqua:ko-build/ko", disabled_mise)
+            self.assertIn('"aqua:ko-build/ko" = "0.19"', enabled_mise)
+            self.assertIn('[tasks."container:build"]', enabled_mise)
+            self.assertIn("ko build --local --tags dev", enabled_mise)
+            self.assertIn('CONTAINER_IMAGE_REPOSITORY:-ko.local', enabled_mise)
+            self.assertIn(
+                "CONTAINER_IMAGE_REPOSITORY must be a complete registry/repository name",
+                enabled_mise,
+            )
+            self.assertIn('CONTAINER_IMAGE_PLATFORM:-', enabled_mise)
+            self.assertIn('[tasks."container:publish"]', enabled_mise)
+            self.assertIn("--bare --platform=all", enabled_mise)
+            self.assertIn("tag_args+=(--tags latest)", enabled_mise)
+            self.assertIn(
+                "ghcr.io/YewFence/example-go-cli",
+                enabled_mise,
+            )
+            self.assertIn("./cmd/example-go-cli", enabled_mise)
+            self.assertNotIn("./cmd/your-cli", enabled_mise)
+
+            disabled_release = (
+                disabled / ".github/workflows/release.yml"
+            ).read_text()
+            release = (enabled / ".github/workflows/release.yml").read_text()
+            self.assertNotIn("  publish-container:\n", disabled_release)
+            self.assertNotIn("packages: write", disabled_release)
+            self.assertNotIn("ko login ghcr.io", disabled_release)
+            self.assertIn("  publish-container:\n", release)
+            self.assertIn("needs: [version, release]", release)
+            self.assertIn("packages: write", release)
+            self.assertIn("ko login ghcr.io", release)
+            self.assertIn(
+                "CONTAINER_IMAGE_REPOSITORY: ghcr.io/YewFence/example-go-cli",
+                release,
+            )
+            self.assertIn(
+                "RELEASE_PRERELEASE: ${{ needs.version.outputs.prerelease }}",
+                release,
+            )
+            self.assertIn("run: mise run container:publish", release)
+            self.assertNotIn("ko build", release)
+            self.assertLess(
+                release.index("  release:\n"),
+                release.index("  publish-container:\n"),
+            )
+            self.assertLess(
+                release.index("ko login ghcr.io"),
+                release.index("run: mise run container:publish"),
+            )
+
+            disabled_readme = (disabled / "README.md").read_text()
+            enabled_readme = (enabled / "README.md").read_text()
+            self.assertNotIn("## Container Image", disabled_readme)
+            self.assertIn("## Container Image", enabled_readme)
+            self.assertIn(
+                "ghcr.io/YewFence/example-go-cli:vMAJOR.MINOR.PATCH",
+                enabled_readme,
+            )
+
+            for output in ("Dockerfile", "ko.yaml", ".ko.yaml"):
+                self.assertFalse((enabled / output).exists())
+
 
 if __name__ == "__main__":
     unittest.main()

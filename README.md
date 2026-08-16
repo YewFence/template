@@ -142,6 +142,8 @@ mise run check
 
 启用了 `crates-io-publish` capability 的 Rust 项目在首次发布前还需要配置 trusted publishing，具体步骤见 [Rust crates.io 发布指南](docs/guides/rust-crates-io-publishing.md)。这份一次性使用指南由 monorepo 维护，不会进入生成项目。
 
+启用了 `container-image-publish` capability 的 Go CLI 项目会在 GitHub Release 成功后向 GHCR 发布同名多平台镜像；首次发布前的权限检查、本地构建方式和 tag 规则见 [Go CLI 容器镜像发布指南](docs/guides/go-cli-container-image-publishing.md)。
+
 ## Bash fallback
 
 克隆本 monorepo 后，可以在没有 uv 时尝试：

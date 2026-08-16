@@ -77,7 +77,7 @@ monorepo 自身的维护环境与模板交付物分离。根 `mise.lock`、`tool
 
 ## Staging Validation
 
-`mise run check [template]` 验证实例化后的真实项目行为，但不修改来源或 template deliverable preview。它为每个 profile 自动展开适用 capabilities 的完整布尔笛卡尔积；当前共运行 8 个 cases：`common` 和 `go-cli` 各验证 `docs-site` 开关两个 cases，`rust` 验证 `docs-site` 与 `crates-io-publish` 的四种组合。
+`mise run check [template]` 验证实例化后的真实项目行为，但不修改来源或 template deliverable preview。它为每个 profile 自动展开适用 capabilities 的完整布尔笛卡尔积；当前共运行 10 个 cases：`common` 验证 `docs-site` 开关两个 cases，`go-cli` 验证 `docs-site` 与 `container-image-publish` 的四种组合，`rust` 验证 `docs-site` 与 `crates-io-publish` 的四种组合。
 
 1. 共享模板准备内核验证完整 profile 合同、解析 case 的 effective capability set，并在隔离 destination 渲染未实例化 blueprint。
 2. 工具读取 `templates.toml` 中固定的 validation metadata，复用正式 project instantiation 引擎替换内容和路径 token。

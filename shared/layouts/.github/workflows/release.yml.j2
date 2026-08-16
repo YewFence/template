@@ -284,7 +284,7 @@ jobs:
           release_url="$(gh release view "${RELEASE_TAG}" --json url --jq .url)"
           echo "Published GitHub Release ${release_url}"
           echo "| URL | ${release_url} |" >> "${GITHUB_STEP_SUMMARY}"
-<$ slot("publish_crate_job", optional=true) $>
+<$ slot("publish_crate_job", optional=true) $><$ slot("publish_container_job", optional=true) $>
   close-superseded-release-pr:
     name: Close Superseded Release PR
     needs:

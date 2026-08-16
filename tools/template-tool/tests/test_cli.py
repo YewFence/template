@@ -23,12 +23,12 @@ REPOSITORY_ROOT = Path(__file__).parents[3]
 
 class TemplateCheckTest(unittest.TestCase):
     @mock.patch("template_tool.cli._run_template_project_check")
-    def test_repository_check_expands_the_configured_eight_cases(
+    def test_repository_check_expands_the_configured_ten_cases(
         self, run_check: mock.Mock
     ) -> None:
         check_main(["--root", str(REPOSITORY_ROOT)])
 
-        self.assertEqual(len(run_check.call_args_list), 8)
+        self.assertEqual(len(run_check.call_args_list), 10)
         self.assertEqual(
             [call.args[1:] for call in run_check.call_args_list],
             [
@@ -36,6 +36,8 @@ class TemplateCheckTest(unittest.TestCase):
                 ("common", ("docs-site",)),
                 ("go-cli", ()),
                 ("go-cli", ("docs-site",)),
+                ("go-cli", ("container-image-publish",)),
+                ("go-cli", ("container-image-publish", "docs-site")),
                 ("rust", ()),
                 ("rust", ("docs-site",)),
                 ("rust", ("crates-io-publish",)),

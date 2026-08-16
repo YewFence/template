@@ -1,0 +1,43 @@
+[tasks."container:build"]
+description = "Build the CLI container image in the local Docker-compatible daemon"
+shell = "bash -c"
+run = """
+repository="$(printf '%s' "${CONTAINER_IMAGE_REPOSITORY:-ko.local}" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+if [[ "${repository}" != "ko.local" ]]; then
+  registry="${repository%%/*}"
+  if [[ "${repository}" != */* || ( "${registry}" != *.* && "${registry}" != *:* && "${registry}" != "localhost" ) ]]; then
+    echo "CONTAINER_IMAGE_REPOSITORY must be a complete registry/repository name" >&2
+    exit 1
+  fi
+fi
+platform_args=()
+if [[ -n "${CONTAINER_IMAGE_PLATFORM:-}" ]]; then
+  platform_args+=(--platform "${CONTAINER_IMAGE_PLATFORM}")
+fi
+
+KO_DOCKER_REPO="${repository}" ko build --local --tags dev "${platform_args[@]}" ./cmd/{{BINARY_NAME}}
+"""
+
+[tasks."container:publish"]
+description = "Publish the release CLI container image to GHCR"
+shell = "bash -c"
+run = """
+release_tag="${RELEASE_TAG:?RELEASE_TAG is required}"
+release_prerelease="${RELEASE_PRERELEASE:?RELEASE_PRERELEASE is required}"
+repository="$(printf '%s' "${CONTAINER_IMAGE_REPOSITORY:-ghcr.io/{{GITHUB_OWNER}}/{{REPO_NAME}}}" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+registry="${repository%%/*}"
+if [[ "${repository}" != */* || ( "${registry}" != *.* && "${registry}" != *:* && "${registry}" != "localhost" ) ]]; then
+  echo "CONTAINER_IMAGE_REPOSITORY must be a complete registry/repository name" >&2
+  exit 1
+fi
+
+tag_args=(--tags "${release_tag}")
+if [[ "${release_prerelease}" == "false" ]]; then
+  tag_args+=(--tags latest)
+elif [[ "${release_prerelease}" != "true" ]]; then
+  echo "RELEASE_PRERELEASE must be true or false" >&2
+  exit 1
+fi
+
+KO_DOCKER_REPO="${repository}" ko build --bare --platform=all "${tag_args[@]}" ./cmd/{{BINARY_NAME}}
+"""

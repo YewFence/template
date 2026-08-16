@@ -39,6 +39,16 @@ class ValidationAdapterTest(unittest.TestCase):
 
         self.assertNotIn("run crates-io:package:check", calls)
 
+    def test_container_image_publish_enabled_builds_local_image(self) -> None:
+        calls = self.run_adapter("go-cli", ("container-image-publish",))
+
+        self.assertIn("run container:build", calls)
+
+    def test_container_image_publish_disabled_skips_local_image(self) -> None:
+        calls = self.run_adapter("go-cli", ())
+
+        self.assertNotIn("run container:build", calls)
+
     def test_explicit_docs_site_state_rejects_mismatched_staged_project(self) -> None:
         with self.assertRaises(subprocess.CalledProcessError):
             self.run_adapter("common", ("docs-site",), staged_capabilities=())
@@ -48,6 +58,16 @@ class ValidationAdapterTest(unittest.TestCase):
             self.run_adapter(
                 "rust",
                 ("crates-io-publish",),
+                staged_capabilities=(),
+            )
+
+    def test_explicit_container_image_state_rejects_mismatched_staged_project(
+        self,
+    ) -> None:
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.run_adapter(
+                "go-cli",
+                ("container-image-publish",),
                 staged_capabilities=(),
             )
 
@@ -110,6 +130,7 @@ class ValidationAdapterTest(unittest.TestCase):
     ) -> None:
         docs_enabled = "docs-site" in enabled_capabilities
         crates_io_enabled = "crates-io-publish" in enabled_capabilities
+        container_image_enabled = "container-image-publish" in enabled_capabilities
         (template_root / ".github/workflows").mkdir(parents=True)
         ci_lines = ["jobs:", "  check:"]
         if docs_enabled:
@@ -145,6 +166,22 @@ class ValidationAdapterTest(unittest.TestCase):
             publish_script = scripts_directory / "publish-crate"
             publish_script.write_text("#!/bin/sh\n", encoding="utf-8")
             publish_script.chmod(0o755)
+        if profile == "go-cli" and container_image_enabled:
+            release_lines.extend(
+                (
+                    "  publish-container:",
+                    "    needs: [version, release]",
+                    "    permissions:",
+                    "      packages: write",
+                    "      - name: Authenticate with GHCR",
+                    '        run: printf token | ko login ghcr.io --username actor --password-stdin',
+                    "      - name: Publish container image",
+                    "        env:",
+                    "          CONTAINER_IMAGE_REPOSITORY: ghcr.io/YewFence/example-go-cli",
+                    "          RELEASE_PRERELEASE: ${{ needs.version.outputs.prerelease }}",
+                    "        run: mise run container:publish",
+                )
+            )
         (template_root / ".github/workflows/release.yml").write_text(
             "\n".join(release_lines) + "\n", encoding="utf-8"
         )
@@ -157,6 +194,16 @@ class ValidationAdapterTest(unittest.TestCase):
         ci_tool_lines = ["[tools]", 'git-cliff = "latest"']
         if profile == "rust" and crates_io_enabled:
             ci_tool_lines.append('jq = "1"')
+        if profile == "go-cli" and container_image_enabled:
+            ci_tool_lines.extend(
+                (
+                    '"aqua:ko-build/ko" = "0.19"',
+                    '[tasks."container:build"]',
+                    'run = "ko build --local --tags dev ./cmd/example-go-cli"',
+                    '[tasks."container:publish"]',
+                    'run = "ko build --bare --platform=all ./cmd/example-go-cli; tag_args+=(--tags latest); echo RELEASE_PRERELEASE must be true or false"',
+                )
+            )
         (template_root / "mise.ci.toml").write_text(
             "\n".join(ci_tool_lines) + "\n", encoding="utf-8"
         )
@@ -205,6 +252,8 @@ class ValidationAdapterTest(unittest.TestCase):
             )
         if profile == "rust" and "crates-io-publish" in enabled_capabilities:
             tasks.extend(("crates-io:package:check", "crates-io:publish"))
+        if profile == "go-cli" and "container-image-publish" in enabled_capabilities:
+            tasks.extend(("container:build", "container:publish"))
         path.write_text(
             "#!/bin/sh\n"
             "set -eu\n"

@@ -9,11 +9,14 @@
 
 ## 模板使用指南
 
+- [Go CLI 容器镜像发布](guides/go-cli-container-image-publishing.md)：启用 `container-image-publish` capability 后的本地构建、GHCR 权限与发布行为。
 - [Rust crates.io 发布](guides/rust-crates-io-publishing.md)：启用 `crates-io-publish` capability 后的首次配置与后续发布流程。
 
 ## 活跃工作
 
 - [Monorepo 公开发布](plans/monorepo-publication.md)：远端创建、首个公开版本和旧仓库切换。
+- [go-cli 容器镜像发布 capability](plans/go-cli-container-image-publish.md)：使用 ko 将 Go CLI 多平台镜像发布到 GHCR 的设计。
+- [Codecov 上传 capability](plans/codecov-upload-capability.md)：共享 Codecov 上传接线与 common、Go、Rust coverage adapter 的设计。
 
 ## 历史记录
 
