@@ -8,6 +8,7 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
+      { text: 'Guide', link: '/guide/getting-started' },
       { text: 'Shell Completion', link: '/guide/completion' },
       { text: 'GitHub', link: 'https://github.com/{{GITHUB_OWNER}}/{{REPO_NAME}}' }
     ],
@@ -16,6 +17,7 @@ export default defineConfig({
       {
         text: 'Guide',
         items: [
+          { text: 'Getting Started', link: '/guide/getting-started' },
           { text: 'Shell Completion', link: '/guide/completion' }
         ]
       }

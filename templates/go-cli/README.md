@@ -44,7 +44,7 @@ mise run cli:install
 
 ## Documentation
 
-See the [documentation site](https://{{GITHUB_OWNER}}.github.io/{{REPO_NAME}}) for more information.
+See the [documentation site](https://{{GITHUB_OWNER}}.github.io/{{REPO_NAME}}/) for setup, usage, and configuration guidance.
 
 ## Contributing
 

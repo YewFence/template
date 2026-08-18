@@ -7,6 +7,9 @@ hero:
   tagline: 'A lightweight, release-ready Go CLI.'
   actions:
     - theme: brand
+      text: Get Started
+      link: /guide/getting-started
+    - theme: alt
       text: GitHub Repo
       link: https://github.com/{{GITHUB_OWNER}}/{{REPO_NAME}}
     - theme: alt
