@@ -2,6 +2,7 @@
 <$ [
   'git-cliff = "latest"',
   slot("maintenance_tools", optional=true) | trim,
+  slot("coverage_tools", optional=true) | trim,
   slot("container_image_tools", optional=true) | trim,
   slot("crates_io_publish_tools", optional=true) | trim,
 ] | reject("equalto", "") | join("\n") $>

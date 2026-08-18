@@ -43,7 +43,7 @@ run = "go get -u ./... && go mod tidy"
 [tasks.test]
 description = "Run Go tests"
 run = "go test -v ./..."
-
+<$ slot("coverage_task", optional=true) $>
 [tasks."fmt:check"]
 description = "Check Go code formatting"
 raw = true

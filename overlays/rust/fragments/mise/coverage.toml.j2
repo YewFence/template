@@ -1,0 +1,4 @@
+
+[tasks.coverage]
+description = "Generate lcov.info for Codecov upload"
+run = "cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --locked"

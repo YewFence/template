@@ -43,7 +43,7 @@ run = "cargo update"
 [tasks.test]
 description = "Run Rust tests"
 run = "cargo test --workspace --all-targets --all-features --locked"
-
+<$ slot("coverage_task", optional=true) $>
 [tasks."fmt:check"]
 description = "Check Rust formatting"
 run = "cargo fmt --all -- --check"

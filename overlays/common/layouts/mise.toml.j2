@@ -41,7 +41,7 @@ run = 'echo "[PLACEHOLDER] Replace deps:update with the project dependency updat
 [tasks.test]
 description = "[PLACEHOLDER] Run project tests"
 run = 'echo "[PLACEHOLDER] Replace test with the project test command, such as cargo test or go test ./..."'
-
+<$ slot("coverage_task", optional=true) $>
 [tasks."fmt:check"]
 description = "[PLACEHOLDER] Check project-specific formatting"
 run = 'echo "[PLACEHOLDER] Replace fmt:check with the project formatting check, such as cargo fmt --check or golangci-lint fmt --diff"'

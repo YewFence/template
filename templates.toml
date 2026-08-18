@@ -17,6 +17,7 @@ hints = [
 [templates.common]
  [templates.common.capabilities]
  docs-site = true
+ codecov-upload = false
  [templates.common.instantiation]
  required = ["project_name", "description", "github_owner", "repo_name"]
  [templates.common.instantiation.tokens]
@@ -46,6 +47,7 @@ hints = [
  [templates.common.slots."mise.toml"]
  docs_tools = { capability = "docs-site", fragments = ["shared:mise/docs-tools.toml.j2"] }
  docs_tasks = { capability = "docs-site", fragments = ["shared:mise/docs-tasks.toml.j2"] }
+ coverage_task = { capability = "codecov-upload", fragments = ["overlay:mise/coverage.toml.j2"] }
  [templates.common.slots."README.md"]
  docs_badge = { capability = "docs-site", fragments = ["overlay:docs/README.md.j2"] }
  docs_section = { capability = "docs-site", fragments = ["overlay:docs/README-section.md.j2"] }
@@ -53,8 +55,10 @@ hints = [
  docs_section = { capability = "docs-site", fragments = ["overlay:docs/CONTRIBUTING-section.md.j2"] }
  [templates.common.slots.".gitignore"]
  docs_ignored_paths = { capability = "docs-site", fragments = ["shared:docs-ignored-paths.j2"] }
+ coverage_ignored_paths = { capability = "codecov-upload", fragments = ["overlay:gitignore/coverage.j2"] }
  [templates.common.slots.".github/workflows/ci.yml"]
  docs_job = { capability = "docs-site", fragments = ["shared:workflows/docs/docs-job.yml.j2"] }
+ coverage_job = { capability = "codecov-upload", fragments = ["overlay:workflows/ci/coverage-job.yml.j2"] }
  [templates.common.capability_outputs]
  docs-site = ["docs/", ".github/workflows/docs.yml"]
  [templates.common.slots.".github/workflows/audit.yml"]
@@ -69,6 +73,7 @@ hints = [
  [templates.go-cli.capabilities]
  docs-site = true
  container-image-publish = false
+ codecov-upload = false
  [templates.go-cli.instantiation]
  required = ["project_name", "description", "github_owner", "repo_name", "go_module", "binary_name"]
  [templates.go-cli.instantiation.tokens]
@@ -107,6 +112,7 @@ hints = [
  [templates.go-cli.slots."mise.toml"]
  docs_tools = { capability = "docs-site", fragments = ["shared:mise/docs-tools.toml.j2"] }
  docs_tasks = { capability = "docs-site", fragments = ["shared:mise/docs-tasks.toml.j2"] }
+ coverage_task = { capability = "codecov-upload", fragments = ["overlay:mise/coverage.toml.j2"] }
  [templates.go-cli.slots."README.md"]
  docs_badge = { capability = "docs-site", fragments = ["overlay:docs/README.md.j2"] }
  docs_section = { capability = "docs-site", fragments = ["overlay:docs/README-section.md.j2"] }
@@ -115,9 +121,11 @@ hints = [
  docs_section = { capability = "docs-site", fragments = ["overlay:docs/CONTRIBUTING-section.md.j2"] }
  [templates.go-cli.slots.".gitignore"]
  docs_ignored_paths = { capability = "docs-site", fragments = ["shared:docs-ignored-paths.j2"] }
+ coverage_ignored_paths = { capability = "codecov-upload", fragments = ["overlay:gitignore/coverage.j2"] }
  [templates.go-cli.slots.".github/workflows/ci.yml"]
  docs_job = { capability = "docs-site", fragments = ["shared:workflows/docs/docs-job.yml.j2"] }
  project_cache = ["overlay:workflows/ci/project-cache.yml.j2"]
+ coverage_job = { capability = "codecov-upload", fragments = ["overlay:workflows/ci/coverage-job.yml.j2"] }
  [templates.go-cli.slots.".github/workflows/audit.yml"]
  audit_cache = ["overlay:workflows/audit/cache.yml.j2"]
  audit_paths = ["overlay:workflows/audit/paths.yml.j2"]
@@ -138,6 +146,7 @@ hints = [
  [templates.rust.capabilities]
  docs-site = true
  crates-io-publish = false
+ codecov-upload = false
  [templates.rust.instantiation]
  required = ["project_name", "description", "github_owner", "repo_name", "cargo_package", "binary_name"]
  [templates.rust.instantiation.tokens]
@@ -175,6 +184,7 @@ hints = [
  binary_name = "replace-me-binary"
  [templates.rust.slots."mise.ci.toml"]
  maintenance_tools = ["overlay:mise/ci/maintenance.toml.j2"]
+ coverage_tools = { capability = "codecov-upload", fragments = ["overlay:mise/ci/coverage-tools.toml.j2"] }
  crates_io_publish_tools = { capability = "crates-io-publish", fragments = ["overlay:mise/ci/crates-io-publish-tools.toml.j2"] }
  audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
  release_version_tasks = ["overlay:mise/ci/release-version.toml.j2"]
@@ -184,6 +194,7 @@ hints = [
  [templates.rust.slots."mise.toml"]
  docs_tools = { capability = "docs-site", fragments = ["shared:mise/docs-tools.toml.j2"] }
  docs_tasks = { capability = "docs-site", fragments = ["shared:mise/docs-tasks.toml.j2"] }
+ coverage_task = { capability = "codecov-upload", fragments = ["overlay:mise/coverage.toml.j2"] }
  [templates.rust.slots."README.md"]
  docs_badge = { capability = "docs-site", fragments = ["overlay:docs/README.md.j2"] }
  docs_section = { capability = "docs-site", fragments = ["overlay:docs/README-section.md.j2"] }
@@ -191,6 +202,7 @@ hints = [
  docs_section = { capability = "docs-site", fragments = ["overlay:docs/CONTRIBUTING-section.md.j2"] }
  [templates.rust.slots.".gitignore"]
  docs_ignored_paths = { capability = "docs-site", fragments = ["shared:docs-ignored-paths.j2"] }
+ coverage_ignored_paths = { capability = "codecov-upload", fragments = ["overlay:gitignore/coverage.j2"] }
  [templates.rust.capability_outputs]
  docs-site = ["docs/", ".github/workflows/docs.yml"]
  crates-io-publish = ["scripts/publish-crate"]
@@ -200,6 +212,7 @@ hints = [
  docs_job = { capability = "docs-site", fragments = ["shared:workflows/docs/docs-job.yml.j2"] }
  project_cache = ["overlay:workflows/ci/project-cache.yml.j2"]
  crates_io_package_check = { capability = "crates-io-publish", fragments = ["overlay:workflows/ci/crates-io-package-check.yml.j2"] }
+ coverage_job = { capability = "codecov-upload", fragments = ["overlay:workflows/ci/coverage-job.yml.j2"] }
  [templates.rust.slots.".github/workflows/audit.yml"]
  audit_cache = ["overlay:workflows/audit/cache.yml.j2"]
  audit_paths = ["overlay:workflows/audit/paths.yml.j2"]

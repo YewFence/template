@@ -1,7 +1,7 @@
 /dist/
 /bin/
-/coverage.out
-<$ slot("docs_ignored_paths", optional=true) | trim $>
+<% set coverage_ignored_paths = slot("coverage_ignored_paths", optional=true) %><% if coverage_ignored_paths %><$ coverage_ignored_paths | trim $>
+<% endif %><$ slot("docs_ignored_paths", optional=true) | trim $>
 *.test
 
 .codex
