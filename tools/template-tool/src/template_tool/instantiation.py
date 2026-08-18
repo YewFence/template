@@ -96,10 +96,10 @@ def instantiate_tree(root: Path | str, spec: InstantiationSpec, metadata: dict[s
     plan: dict[PurePosixPath, PurePosixPath] = {}
     for source in entries:
         destination = _replace_path(source, values)
-        if destination in plan.values() and plan.get(source) != destination:
-            raise InstantiationError(f"path collision after instantiation: {destination}")
         if destination in source_paths and destination != source:
             raise InstantiationError(f"instantiation target already exists: {destination}")
+        if destination in plan.values() and plan.get(source) != destination:
+            raise InstantiationError(f"path collision after instantiation: {destination}")
         plan[source] = destination
 
     destination_kinds = {destination: entries[source] for source, destination in plan.items()}

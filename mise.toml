@@ -46,3 +46,11 @@ uv run --project tools/template-tool check-templates{% if usage.template %} "{{ 
 [tasks."actions:update"]
 description = "Update and pin root maintenance workflow actions"
 run = "pinact run --update .github/workflows"
+
+[tasks."docs:reference"]
+description = "Generate the CLI reference markdown"
+run = "uv run --project tools/template-tool generate-cli-reference docs/reference/cli.md"
+
+[tasks."docs:reference:check"]
+description = "Check the generated CLI reference is in sync"
+run = "uv run --project tools/template-tool generate-cli-reference --check docs/reference/cli.md"

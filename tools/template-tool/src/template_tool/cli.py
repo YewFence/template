@@ -30,22 +30,299 @@ from .application import (
 from .instantiation import InstantiationError, validate_metadata_value
 from .repository import TemplateError, TemplateRepository
 
+_UVX_FROM = (
+    'uvx --from "git+https://github.com/YewFence/template.git@main'
+    '#subdirectory=tools/template-tool"'
+)
+
+_INIT_DESCRIPTION = """\
+Initialize a new project from a template at the selected ref of the template
+monorepo. The target must be a clean Git repository without any commits, and
+the target path must be the repository root.
+
+The tool validates the template contract, renders, and instantiates the
+template in an isolated tree, creates the initial commit with your normal Git
+identity (signing and hooks included), then stages the instantiated project as
+uncommitted changes. It never guesses metadata, creates remotes, or commits
+the template content for you."""
+
+_INIT_EPILOG = f"""\
+examples:
+  {_UVX_FROM} init-project --ref main --template common --interactive .
+
+Use --interactive to pick capabilities and answer metadata fields, or pass
+--enable-capability/--disable-capability and metadata options for scripted
+use. After instantiation, generate and commit the project's own dependency
+lock state and GitHub Action digests as described in the README."""
+
+_APPLY_DESCRIPTION = """\
+Apply a template at the selected ref to an existing repository. The target
+must be a clean Git repository with at least one commit, and must not be in
+the middle of a merge, rebase, cherry-pick, or revert.
+
+Template changes are staged to the Git index only; nothing is committed
+automatically. Root .gitignore, AGENTS*, license, and notice files are
+protected and skipped. Conflicting paths keep their Git index stages and
+worktree state for manual resolution."""
+
+_APPLY_EPILOG = f"""\
+examples:
+  {_UVX_FROM} apply-template --ref main --template go-cli --interactive .
+
+Review the staged changes with `git status` and `git diff --cached`, then
+commit them yourself. Cancel the whole application with `git reset --hard
+HEAD`. Detached HEAD and colocated Jujutsu repositories are supported, but
+finish, resolve, or cancel this Git application before continuing normal jj
+operations."""
+
+_EXPORT_DESCRIPTION = """\
+Export a template at the selected ref as a standalone candidate tree for
+manual comparison and selective copying, for example to diff a newer template
+ref against an existing project.
+
+The destination must not exist or be empty. Metadata is preset to placeholder
+values so non-interactive exports need no project identity. The export creates
+no .git directory, applies no protected-path filtering, and never touches an
+existing project."""
+
+_EXPORT_EPILOG = f"""\
+examples:
+  {_UVX_FROM} export-template --ref main --template rust --interactive ./rust-template-main
+
+The exported tree is an unbootstrapped template blueprint: dependency lock
+state and GitHub Action digests are not generated."""
+
+_CAPABILITIES_DESCRIPTION = """\
+Print the capabilities a template declares at the selected ref, together with
+their default state. Read-only: the command only reads the capability contract
+of the selected ref. It requires no Git repository and changes nothing."""
+
+_CAPABILITIES_EPILOG = f"""\
+examples:
+  {_UVX_FROM} list-template-capabilities --ref main --template rust
+  {_UVX_FROM} list-template-capabilities --ref main --template rust --json"""
+
+_RENDER_DESCRIPTION = """\
+Render template previews from the shared/ and overlays/ sources into
+templates/<name>/ in the local monorepo checkout. Maintenance command; users
+of the templates do not need it."""
+
+_CHECK_DESCRIPTION = """\
+Check that the committed template previews are in sync with their sources,
+then validate every capability combination of each selected template in
+disposable staging. Maintenance command; normally run by monorepo CI."""
+
+_UMBRELLA_DESCRIPTION = """\
+Unified entry point for all template tool commands. The user-facing commands
+are also available as standalone entry points (init-project, apply-template,
+export-template, list-template-capabilities) that bootstrap into the selected
+ref's own locked tool version before running."""
+
+_INTERACTIVE_HELP = (
+    "choose capabilities and answer metadata fields interactively, "
+    "with a summary confirmation before anything is changed"
+)
+
+_KEEP_TOKENS_HELP = (
+    "stage the raw template blueprint without replacing {{METADATA}} tokens; "
+    "cannot be combined with metadata options"
+)
+
 
 def _root_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--root",
         type=Path,
         default=Path.cwd(),
-        help="monorepo root containing templates.toml",
+        help="monorepo root containing templates.toml (default: current directory)",
     )
 
 
-def _render_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="render-template")
+def _selection_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--repo",
+        default=DEFAULT_REPOSITORY,
+        help="template monorepo to fetch from (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--ref",
+        required=True,
+        help="Git ref of the template monorepo to select, e.g. main or a release tag; "
+        "the template contract and renderer always come from this ref",
+    )
+    parser.add_argument(
+        "--template",
+        required=True,
+        help="template profile declared in templates.toml (e.g. common, go-cli, rust)",
+    )
+    parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
+
+
+def _metadata_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--project-name", help="project display name (metadata field: project_name)")
+    parser.add_argument("--description", help="one-line project description (metadata field: description)")
+    parser.add_argument("--github-owner", help="GitHub user or organization that will own the repository (metadata field: github_owner)")
+    parser.add_argument("--repo-name", help="GitHub repository name (metadata field: repo_name)")
+    parser.add_argument("--go-module", help="Go module path; go-cli template only (metadata field: go_module)")
+    parser.add_argument("--cargo-package", help="Cargo package name; rust template only (metadata field: cargo_package)")
+    parser.add_argument("--binary-name", help="name of the compiled binary; go-cli and rust templates only (metadata field: binary_name)")
+
+
+def _capability_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--enable-capability",
+        action="append",
+        default=[],
+        help="enable a template capability, overriding the profile default; repeatable",
+    )
+    parser.add_argument(
+        "--disable-capability",
+        action="append",
+        default=[],
+        help="disable a template capability, overriding the profile default; repeatable",
+    )
+
+
+def _render_parent() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("template", nargs="?", help="template name; defaults to all")
     parser.add_argument("--check", action="store_true", help="compare generated output without writing")
     _root_argument(parser)
     return parser
+
+
+def _check_parent() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("template", nargs="?", help="template name; defaults to all")
+    _root_argument(parser)
+    return parser
+
+
+def _apply_parent() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(
+        "target",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="existing clean Git repository to receive the template (default: current directory)",
+    )
+    _selection_arguments(parser)
+    _metadata_arguments(parser)
+    _capability_arguments(parser)
+    parser.add_argument("--interactive", action="store_true", help=_INTERACTIVE_HELP)
+    parser.add_argument("--keep-tokens", action="store_true", help=_KEEP_TOKENS_HELP)
+    return parser
+
+
+def _init_parent() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(
+        "target",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="clean Git repository without commits to initialize; must be the repository root (default: current directory)",
+    )
+    _selection_arguments(parser)
+    _metadata_arguments(parser)
+    _capability_arguments(parser)
+    parser.add_argument("--interactive", action="store_true", help=_INTERACTIVE_HELP)
+    parser.add_argument("--keep-tokens", action="store_true", help=_KEEP_TOKENS_HELP)
+    return parser
+
+
+def _export_parent() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(
+        "destination",
+        type=Path,
+        help="directory for the candidate tree; must not exist or be empty",
+    )
+    _selection_arguments(parser)
+    _metadata_arguments(parser)
+    _capability_arguments(parser)
+    parser.add_argument("--interactive", action="store_true", help=_INTERACTIVE_HELP)
+    return parser
+
+
+def _capabilities_parent() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
+    _selection_arguments(parser)
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="print the capability contract as a stable single-line JSON object for scripting",
+    )
+    return parser
+
+
+def _render_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(
+        prog="render-template",
+        parents=[_render_parent()],
+        description=_RENDER_DESCRIPTION,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+
+def _check_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(
+        prog="check-templates",
+        parents=[_check_parent()],
+        description=_CHECK_DESCRIPTION,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+
+def _apply_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(
+        prog="apply-template",
+        parents=[_apply_parent()],
+        description=_APPLY_DESCRIPTION,
+        epilog=_APPLY_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+
+def _init_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(
+        prog="init-project",
+        parents=[_init_parent()],
+        description=_INIT_DESCRIPTION,
+        epilog=_INIT_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+
+def _export_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(
+        prog="export-template",
+        parents=[_export_parent()],
+        description=_EXPORT_DESCRIPTION,
+        epilog=_EXPORT_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+
+def _capabilities_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(
+        prog="list-template-capabilities",
+        parents=[_capabilities_parent()],
+        description=_CAPABILITIES_DESCRIPTION,
+        epilog=_CAPABILITIES_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+
+def user_parsers() -> tuple[argparse.ArgumentParser, ...]:
+    """Parsers of the user-facing standalone entry points, in documentation order."""
+    return (_init_parser(), _apply_parser(), _export_parser(), _capabilities_parser())
+
+
+def maintenance_parsers() -> tuple[argparse.ArgumentParser, ...]:
+    """Parsers of the monorepo maintenance entry points, in documentation order."""
+    return (_render_parser(), _check_parser())
 
 
 def render_main(argv: list[str] | None = None) -> None:
@@ -83,13 +360,6 @@ def render_main(argv: list[str] | None = None) -> None:
     except subprocess.CalledProcessError as error:
         print(f"command failed with exit code {error.returncode}: {error.cmd}", file=sys.stderr)
         raise SystemExit(1) from error
-
-
-def _check_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="check-templates")
-    parser.add_argument("template", nargs="?", help="template name; defaults to all")
-    _root_argument(parser)
-    return parser
 
 
 def check_main(argv: list[str] | None = None) -> None:
@@ -241,20 +511,6 @@ def _run_template_project_check(
         raise TemplateError(f"overlay check exited with {completed.returncode}")
 
 
-def _apply_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="apply-template")
-    parser.add_argument("target", nargs="?", type=Path, default=Path.cwd())
-    parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
-    parser.add_argument("--ref", required=True, help="Git ref to fetch")
-    parser.add_argument("--template", required=True, help="template name")
-    parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
-    _metadata_arguments(parser)
-    _capability_arguments(parser)
-    parser.add_argument("--interactive", action="store_true")
-    parser.add_argument("--keep-tokens", action="store_true")
-    return parser
-
-
 def apply_main(argv: list[str] | None = None) -> None:
     args = _apply_parser().parse_args(argv)
     metadata = _metadata_from_args(args)
@@ -326,38 +582,6 @@ def apply_main(argv: list[str] | None = None) -> None:
     _print_apply_result(result)
     if result.conflicted:
         raise SystemExit(1)
-
-
-def _init_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="init-project")
-    parser.add_argument("target", nargs="?", type=Path, default=Path.cwd())
-    parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
-    parser.add_argument("--ref", required=True, help="Git ref to fetch")
-    parser.add_argument("--template", required=True, help="template name")
-    parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
-    _metadata_arguments(parser)
-    _capability_arguments(parser)
-    parser.add_argument("--interactive", action="store_true")
-    parser.add_argument("--keep-tokens", action="store_true")
-    return parser
-
-
-def _metadata_arguments(parser: argparse.ArgumentParser) -> None:
-    for option in (
-        "project-name",
-        "description",
-        "github-owner",
-        "repo-name",
-        "go-module",
-        "cargo-package",
-        "binary-name",
-    ):
-        parser.add_argument(f"--{option}")
-
-
-def _capability_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--enable-capability", action="append", default=[])
-    parser.add_argument("--disable-capability", action="append", default=[])
 
 
 def _metadata_from_args(args: argparse.Namespace) -> dict[str, str]:
@@ -562,19 +786,6 @@ def init_main(argv: list[str] | None = None) -> None:
         raise SystemExit(1)
 
 
-def _export_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="export-template")
-    parser.add_argument("destination", type=Path)
-    parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
-    parser.add_argument("--ref", required=True, help="Git ref to fetch")
-    parser.add_argument("--template", required=True, help="template name")
-    parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
-    _metadata_arguments(parser)
-    _capability_arguments(parser)
-    parser.add_argument("--interactive", action="store_true")
-    return parser
-
-
 def export_main(argv: list[str] | None = None) -> None:
     args = _export_parser().parse_args(argv)
     overrides = _metadata_from_args(args)
@@ -705,16 +916,6 @@ def _print_apply_result(result: ApplyResult) -> None:
         print("HINT: finish, resolve, or cancel this Git application before continuing normal jj operations.")
 
 
-def _capabilities_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="list-template-capabilities")
-    parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
-    parser.add_argument("--ref", required=True, help="Git ref to fetch")
-    parser.add_argument("--template", required=True, help="template name")
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
-    return parser
-
-
 def capabilities_main(argv: list[str] | None = None) -> None:
     args = _capabilities_parser().parse_args(argv)
     try:
@@ -772,54 +973,65 @@ def _print_capabilities(
         print(f"Capability: {name} (default: {state})")
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="template-tool")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    render_parser = subparsers.add_parser("render")
-    render_parser.add_argument("template", nargs="?")
-    render_parser.add_argument("--check", action="store_true")
-    _root_argument(render_parser)
-    check_parser = subparsers.add_parser("check")
-    check_parser.add_argument("template", nargs="?")
-    _root_argument(check_parser)
-    apply_parser = subparsers.add_parser("apply")
-    apply_parser.add_argument("target", nargs="?", type=Path, default=Path.cwd())
-    apply_parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
-    apply_parser.add_argument("--ref", required=True)
-    apply_parser.add_argument("--template", required=True)
-    apply_parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
-    _metadata_arguments(apply_parser)
-    _capability_arguments(apply_parser)
-    apply_parser.add_argument("--interactive", action="store_true")
-    apply_parser.add_argument("--keep-tokens", action="store_true")
-    init_parser = subparsers.add_parser("init")
-    init_parser.add_argument("target", nargs="?", type=Path, default=Path.cwd())
-    init_parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
-    init_parser.add_argument("--ref", required=True)
-    init_parser.add_argument("--template", required=True)
-    init_parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
-    _metadata_arguments(init_parser)
-    _capability_arguments(init_parser)
-    init_parser.add_argument("--interactive", action="store_true")
-    init_parser.add_argument("--keep-tokens", action="store_true")
-    export_parser = subparsers.add_parser("export")
-    export_parser.add_argument("destination", type=Path)
-    export_parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
-    export_parser.add_argument("--ref", required=True)
-    export_parser.add_argument("--template", required=True)
-    export_parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
-    _metadata_arguments(export_parser)
-    _capability_arguments(export_parser)
-    export_parser.add_argument("--interactive", action="store_true")
-    capabilities_parser = subparsers.add_parser("capabilities")
-    capabilities_parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
-    capabilities_parser.add_argument("--ref", required=True)
-    capabilities_parser.add_argument("--template", required=True)
-    capabilities_parser.add_argument("--json", action="store_true")
-    capabilities_parser.add_argument(
-        "--source-checkout", type=Path, help=argparse.SUPPRESS
+def umbrella_parser() -> argparse.ArgumentParser:
+    """The unified `template-tool` parser with every command as a subcommand."""
+    parser = argparse.ArgumentParser(
+        prog="template-tool",
+        description=_UMBRELLA_DESCRIPTION,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    args = parser.parse_args(argv)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser(
+        "render",
+        parents=[_render_parent()],
+        help="render template previews from sources",
+        description=_RENDER_DESCRIPTION,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers.add_parser(
+        "check",
+        parents=[_check_parent()],
+        help="validate templates in disposable staging",
+        description=_CHECK_DESCRIPTION,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers.add_parser(
+        "apply",
+        parents=[_apply_parent()],
+        help="apply a template to an existing repository",
+        description=_APPLY_DESCRIPTION,
+        epilog=_APPLY_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers.add_parser(
+        "init",
+        parents=[_init_parent()],
+        help="initialize a new project from a template",
+        description=_INIT_DESCRIPTION,
+        epilog=_INIT_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers.add_parser(
+        "export",
+        parents=[_export_parent()],
+        help="export a standalone candidate tree",
+        description=_EXPORT_DESCRIPTION,
+        epilog=_EXPORT_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers.add_parser(
+        "capabilities",
+        parents=[_capabilities_parent()],
+        help="list a template's declared capabilities",
+        description=_CAPABILITIES_DESCRIPTION,
+        epilog=_CAPABILITIES_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = umbrella_parser().parse_args(argv)
     if args.command == "apply":
         forwarded = [str(args.target), "--repo", args.repo, "--ref", args.ref, "--template", args.template]
         for option in ("project-name", "description", "github-owner", "repo-name", "go-module", "cargo-package", "binary-name"):

@@ -2,7 +2,7 @@
 
 本仓库是 `common`、`go-cli` 和 `rust` 三个工程模板的唯一事实来源。维护者编辑共享来源和模板专属来源，renderer 生成完整、自包含的 template deliverable（模板交付物）；生成项目在运行时不依赖本 monorepo。
 
-相关架构取舍记录在 [`docs/adr/`](../adr/) 中，历史收敛过程记录在 [`docs/archive/2026-08-monorepo-convergence/`](../archive/2026-08-monorepo-convergence/) 中。
+相关架构取舍记录在 [`docs/adr/`](../adr/) 中。早期历史文档已在公开发布前移除，可通过 Git 历史追溯；已撤销的方案不构成有效合同。
 
 ## 来源模型
 

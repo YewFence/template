@@ -19,6 +19,7 @@ apply-template = "template_tool.bootstrap:apply_main"
 init-project = "template_tool.bootstrap:init_main"
 export-template = "template_tool.bootstrap:export_main"
 list-template-capabilities = "template_tool.bootstrap:capabilities_main"
+generate-cli-reference = "template_tool.cli_reference:main"
 
 [build-system]
 requires = ["uv_build>=0.12.1,<0.13.0"]

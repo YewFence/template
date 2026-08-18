@@ -10,8 +10,6 @@
 
 1. 阅读根 [`CONTEXT.md`](CONTEXT.md)，使用其中定义的 Template System 术语。
 2. 阅读与任务相关的 [`docs/architecture/`](docs/architecture/) 和 [`docs/adr/`](docs/adr/)。
-3. 涉及尚未完成的公开发布工作时，阅读 [`docs/plans/monorepo-publication.md`](docs/plans/monorepo-publication.md)。
-4. `docs/archive/` 只用于历史追溯，包含已取代和撤销的方案。它与当前架构或 ADR 冲突时，以当前架构和未被取代的 ADR 为准。
 
 ## 目录职责
 
@@ -22,6 +20,7 @@
 - `overlays/<name>/static/`：单个模板拥有的文件。
 - `overlays/<name>/fragments/`：单个模板提供的 adapter fragment。
 - `overlays/<name>/mise.toml`：只供 monorepo staging validation 使用，不进入 template deliverable。
+- `overlays/<name>/README.md`：面向模板使用者的模板说明，不进入 template deliverable。
 - `templates/<name>/`：renderer 生成的完整、自包含默认 capability 集合 preview。
 - `templates.toml`：render、slot、project instantiation 和 apply profile 的共享合同。
 - `tools/template-tool/`：renderer、staging validation、project instantiation 和 Git apply 实现。
@@ -68,15 +67,22 @@ uv run --project tools/template-tool python -m unittest discover -s tools/templa
 mise run sync:check
 ```
 
+CLI 的 help 文本（description、epilog、参数说明）变化会影响生成的 CLI 参考，同步运行：
+
+```bash
+mise run docs:reference
+```
+
 ## 文档导航
 
-- [`README.md`](README.md)：面向模板使用者的功能与使用入口，包含 `apply-template`、`init-project` 和项目依赖状态生成流程。
+- [`README.md`](README.md)：面向模板使用者的功能列表与使用入口。
 - [`CONTEXT.md`](CONTEXT.md)：Template System 的术语表；命名设计、文档和测试时使用这里的规范术语。
 - [`docs/README.md`](docs/README.md)：完整文档索引。
+- [`docs/guides/use-template.md`](docs/guides/use-template.md)：面向模板使用者的完整使用指南。
+- [`docs/reference/cli.md`](docs/reference/cli.md)：由 `mise run docs:reference` 生成的 CLI 参考，不要手改。
 - [`docs/architecture/monorepo.md`](docs/architecture/monorepo.md)：当前来源模型、组合方式、渲染、staging validation、项目实例化和自动化所有权。
 - [`docs/adr/`](docs/adr/)：仍然有效的长期架构决策及其取舍。
 - [`docs/plans/`](docs/plans/)：尚未完成的活跃工作，只保留未来步骤。
-- [`docs/archive/`](docs/archive/)：已完成迁移、实现记录和废弃方案，仅供追溯。
 
 ## Agent skills
 
