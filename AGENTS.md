@@ -60,6 +60,25 @@ mise run sync:check [template]
 - `sync:check` 只读验证来源和未实例化快照同步。
 - `check` 为适用 capabilities 展开完整布尔组合，创建 disposable staging，复用 `init-project`、`apply-template` 共用的模板准备内核与正式 project instantiation，调用对应 validation adapter 生成临时状态，再运行模板自己的完整检查。这个不需要本地跑，交由 Github Action 负责检查。
 
+修改模板来源后，可以使用当前工作树的 `export` 将选定 capability 集合的最终模板导出到临时目录做验收。它会读取尚未提交的 `shared/`、`overlays/` 和 `templates.toml`，生成已经实例化的候选树；直接查看导出的文件通常比在 Jinja layout 和 fragment 之间追踪空白、slot 绑定和最终缩进更容易发现问题。用法大致如下：
+
+```bash
+export_root="$(mktemp -d /tmp/template-export.XXXXXX)"
+template="go-cli" # 或者其他需要检查的模板
+# 按本次修改替换或删除 capability override；必要时也可以使用 --disable-capability。
+uv run --project tools/template-tool template-tool export \
+--source-checkout "$PWD" \
+--repo "$PWD" \
+--ref HEAD \
+--template "$template" \
+--enable-capability codecov-upload \
+"$export_root/$template"
+```
+
+具体参数见 `uv run --project tools/template-tool template-tool export --help`。
+
+导出是只读验收辅助，不替代 `sync:check`、工具单元测试或 GitHub Actions 的完整 staging validation。导出结果是 unbootstrapped candidate tree，不会生成 lockfile、Action digest 或其他项目引导状态。
+
 修改 `tools/template-tool/` 后，运行：
 
 ```bash
