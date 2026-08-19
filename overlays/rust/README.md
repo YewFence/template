@@ -18,7 +18,7 @@ Rendered default-capability preview: [`templates/rust/`](../../templates/rust/).
 | --- | --- | --- |
 | `docs-site` | enabled | VitePress documentation site with a GitHub Pages deployment workflow |
 | `crates-io-publish` | disabled | crates.io publishing with trusted publishing: package checks in CI and a publish job on release — see the [crates.io publishing guide](../../docs/guides/rust-crates-io-publishing.md) |
-| `codecov-upload` | disabled | Coverage task and CI job uploading coverage to Codecov |
+| `codecov-upload` | disabled | Rust coverage report plus PR and default-branch Codecov uploads — see the [Codecov guide](../../docs/guides/codecov-upload.md) |
 
 ## Required Metadata
 
@@ -34,4 +34,5 @@ Rendered default-capability preview: [`templates/rust/`](../../templates/rust/).
 ## See Also
 
 - [Usage guide](../../docs/guides/use-template.md)
+- [Codecov upload guide](../../docs/guides/codecov-upload.md)
 - [CLI reference](../../docs/reference/cli.md)

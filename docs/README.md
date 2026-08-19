@@ -6,6 +6,7 @@ Current guides, architecture, decisions, and plans for this monorepo.
 
 - [Usage guide](guides/use-template.md): every way to consume the templates — init, apply, export, capability queries, non-interactive usage, and the Bash fallback.
 - [CLI reference](reference/cli.md): every command and option, generated from the tool's `--help` output.
+- [Uploading coverage to Codecov](guides/codecov-upload.md): public-repository prerequisites, PR tokenless uploads, default-branch OIDC, and profile-specific coverage reports.
 - [Publishing container images (Go CLI)](guides/go-cli-container-image-publishing.md): local builds, GHCR permissions, and release behavior with the `container-image-publish` capability.
 - [Publishing to crates.io (Rust)](guides/rust-crates-io-publishing.md): first-release setup and the ongoing release flow with the `crates-io-publish` capability.
 

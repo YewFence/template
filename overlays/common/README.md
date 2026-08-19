@@ -14,7 +14,7 @@ Rendered default-capability preview: [`templates/common/`](../../templates/commo
 | Capability | Default | What it adds |
 | --- | --- | --- |
 | `docs-site` | enabled | VitePress documentation site with a GitHub Pages deployment workflow |
-| `codecov-upload` | disabled | Coverage task and CI job uploading coverage to Codecov |
+| `codecov-upload` | disabled | Replaceable coverage task plus PR and default-branch Codecov uploads — see the [Codecov guide](../../docs/guides/codecov-upload.md) |
 
 ## Required Metadata
 
@@ -28,4 +28,5 @@ Rendered default-capability preview: [`templates/common/`](../../templates/commo
 ## See Also
 
 - [Usage guide](../../docs/guides/use-template.md)
+- [Codecov upload guide](../../docs/guides/codecov-upload.md)
 - [CLI reference](../../docs/reference/cli.md)

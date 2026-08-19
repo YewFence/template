@@ -18,7 +18,7 @@ Rendered default-capability preview: [`templates/go-cli/`](../../templates/go-cl
 | --- | --- | --- |
 | `docs-site` | enabled | VitePress documentation site with a GitHub Pages deployment workflow |
 | `container-image-publish` | disabled | Multi-platform container image built with ko and published to GHCR after each release — see the [container image publishing guide](../../docs/guides/go-cli-container-image-publishing.md) |
-| `codecov-upload` | disabled | Coverage task and CI job uploading coverage to Codecov |
+| `codecov-upload` | disabled | Go coverage report plus PR and default-branch Codecov uploads — see the [Codecov guide](../../docs/guides/codecov-upload.md) |
 
 ## Required Metadata
 
@@ -34,4 +34,5 @@ Rendered default-capability preview: [`templates/go-cli/`](../../templates/go-cl
 ## See Also
 
 - [Usage guide](../../docs/guides/use-template.md)
+- [Codecov upload guide](../../docs/guides/codecov-upload.md)
 - [CLI reference](../../docs/reference/cli.md)

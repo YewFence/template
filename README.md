@@ -14,7 +14,7 @@ Project templates for bootstrapping new repositories: a language-agnostic base, 
 | Release automation | git-cliff prepares release PRs from `main`; pushed `v*` tags and merged release PRs publish GitHub Releases with pre-built archives |
 | Dependency updates | Renovate config covering GitHub Actions, language dependencies, and mise tools |
 | Docs site | Optional VitePress documentation site deployed to GitHub Pages (`docs-site` capability, enabled by default) |
-| Coverage | Optional Codecov upload (`codecov-upload` capability) |
+| Coverage | Optional Codecov upload (`codecov-upload` capability) — see the [Codecov guide](docs/guides/codecov-upload.md) |
 | Security | pinact pins GitHub Actions to commit hashes, a minimum release age applies to tool and action updates, and CI audits dependencies for vulnerabilities and leaked secrets |
 
 ## Templates

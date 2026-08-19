@@ -130,5 +130,6 @@ The Bash launcher first fetches the selected ref shallowly for the whole reposit
 ## Next Steps
 
 - Per-template specifics: [common](../../overlays/common/README.md), [go-cli](../../overlays/go-cli/README.md), [rust](../../overlays/rust/README.md)
+- Projects with `codecov-upload` enabled: [Codecov upload guide](codecov-upload.md)
 - Rust projects with `crates-io-publish` enabled: [crates.io publishing guide](rust-crates-io-publishing.md)
 - Go CLI projects with `container-image-publish` enabled: [container image publishing guide](go-cli-container-image-publishing.md)
