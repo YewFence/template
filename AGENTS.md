@@ -82,7 +82,7 @@ uv run --project tools/template-tool template-tool export \
 修改 `tools/template-tool/` 后，运行：
 
 ```bash
-uv run --project tools/template-tool python -m unittest discover -s tools/template-tool/tests -v
+uv run --project tools/template-tool pytest tools/template-tool/tests -v
 mise run sync:check
 ```
 

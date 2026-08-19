@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 import tempfile
-import unittest
 from contextlib import redirect_stderr
 from io import StringIO
 from pathlib import Path
-from unittest import mock
+
+import pytest
+from pytest_mock import MockerFixture
 
 from template_tool import TemplateRepository
 from template_tool.cli import (
@@ -21,12 +22,12 @@ from template_tool.cli import (
 REPOSITORY_ROOT = Path(__file__).parents[3]
 
 
-class TemplateCheckTest(unittest.TestCase):
-    @mock.patch("template_tool.cli._run_template_project_check")
-    @mock.patch("template_tool.cli.TemplateRepository")
+class TestTemplateCheck:
     def test_check_runs_every_capability_combination_and_summarizes_failures(
-        self, repository_type: mock.Mock, run_check: mock.Mock
+        self, mocker: MockerFixture
     ) -> None:
+        repository_type = mocker.patch("template_tool.cli.TemplateRepository")
+        run_check = mocker.patch("template_tool.cli._run_template_project_check")
         repository = repository_type.return_value
         repository.select.return_value = ("example",)
         repository.check_repository.return_value.matches = True
@@ -43,29 +44,25 @@ class TemplateCheckTest(unittest.TestCase):
         )
         stderr = StringIO()
 
-        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+        with redirect_stderr(stderr), pytest.raises(SystemExit) as raised:
             check_main(["example", "--root", "/repository"])
 
-        self.assertEqual(raised.exception.code, 1)
-        self.assertEqual(
-            run_check.call_args_list,
-            [
-                mock.call(repository, "example", ()),
-                mock.call(repository, "example", ("release",)),
-                mock.call(repository, "example", ("docs-site",)),
-                mock.call(repository, "example", ("docs-site", "release")),
-            ],
-        )
-        self.assertIn(
-            "staging validation failures:\n",
-            stderr.getvalue(),
-        )
-        self.assertIn(
-            "example[docs-site=off,release=on]: overlay check exited with 7",
-            stderr.getvalue(),
+        assert raised.value.code == 1
+        assert run_check.call_args_list == [
+            mocker.call(repository, "example", ()),
+            mocker.call(repository, "example", ("release",)),
+            mocker.call(repository, "example", ("docs-site",)),
+            mocker.call(repository, "example", ("docs-site", "release")),
+        ]
+        assert "staging validation failures:\n" in stderr.getvalue()
+        assert (
+            "example[docs-site=off,release=on]: overlay check exited with 7"
+            in stderr.getvalue()
         )
 
-    def test_project_check_uses_external_git_environment_without_marker(self) -> None:
+    def test_project_check_uses_external_git_environment_without_marker(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "shared/static").mkdir(parents=True)
@@ -125,12 +122,15 @@ class TemplateCheckTest(unittest.TestCase):
             environment = os.environ | {
                 "PATH": f"{binary_directory}:{os.environ['PATH']}"
             }
-            with mock.patch.dict(os.environ, environment, clear=True):
-                _run_template_project_check(
-                    repository, "example", ("release", "docs-site")
-                )
+            for key in tuple(os.environ):
+                monkeypatch.delenv(key, raising=False)
+            for key, value in environment.items():
+                monkeypatch.setenv(key, value)
+            _run_template_project_check(
+                repository, "example", ("release", "docs-site")
+            )
 
-            self.assertFalse((root / "templates/example/.git").exists())
+            assert not (root / "templates/example/.git").exists()
 
     def test_metadata_from_args_preserves_only_supplied_values(self) -> None:
         args = type(
@@ -147,41 +147,37 @@ class TemplateCheckTest(unittest.TestCase):
             },
         )()
 
-        self.assertEqual(
-            _metadata_from_args(args),
-            {"project_name": "Example", "github_owner": "YewFence"},
-        )
+        assert _metadata_from_args(args) == {
+            "project_name": "Example",
+            "github_owner": "YewFence",
+        }
 
-    @mock.patch("template_tool.cli.questionary.confirm")
-    @mock.patch("template_tool.cli.questionary.text")
-    @mock.patch("template_tool.cli.required_metadata", return_value=("project_name",))
     def test_interactive_metadata_retries_invalid_value(
-        self, required: mock.Mock, text: mock.Mock, confirm: mock.Mock
+        self, mocker: MockerFixture
     ) -> None:
+        mocker.patch("template_tool.cli.required_metadata", return_value=("project_name",))
+        text = mocker.patch("template_tool.cli.questionary.text")
+        confirm = mocker.patch("template_tool.cli.questionary.confirm")
         text.side_effect = [
-            mock.Mock(ask=mock.Mock(return_value=" bad ")),
-            mock.Mock(ask=mock.Mock(return_value="Good")),
+            mocker.Mock(ask=mocker.Mock(return_value=" bad ")),
+            mocker.Mock(ask=mocker.Mock(return_value="Good")),
         ]
         confirm.return_value.ask.return_value = True
 
         metadata = _collect_metadata("repo", "ref", "example", {})
 
-        self.assertEqual(metadata, {"project_name": "Good"})
-        self.assertEqual(text.call_count, 2)
+        assert metadata == {"project_name": "Good"}
+        assert text.call_count == 2
         confirm.return_value.ask.assert_called_once()
 
-    @mock.patch("template_tool.cli.questionary.confirm")
-    @mock.patch("template_tool.cli.questionary.text")
-    @mock.patch("template_tool.cli.required_metadata", return_value=("project_name",))
     def test_interactive_metadata_cancel_does_not_return_values(
-        self, required: mock.Mock, text: mock.Mock, confirm: mock.Mock
+        self, mocker: MockerFixture
     ) -> None:
+        mocker.patch("template_tool.cli.required_metadata", return_value=("project_name",))
+        text = mocker.patch("template_tool.cli.questionary.text")
+        confirm = mocker.patch("template_tool.cli.questionary.confirm")
         text.return_value.ask.return_value = "Good"
         confirm.return_value.ask.return_value = False
 
-        with self.assertRaisesRegex(ApplicationError, "cancelled"):
+        with pytest.raises(ApplicationError, match="cancelled"):
             _collect_metadata("repo", "ref", "example", {})
-
-
-if __name__ == "__main__":
-    unittest.main()

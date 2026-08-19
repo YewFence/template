@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
-import unittest
 from pathlib import Path
 
 
@@ -11,50 +10,35 @@ REPOSITORY_ROOT = Path(__file__).parents[3]
 PUBLISH_SCRIPT = REPOSITORY_ROOT / "overlays/rust/static/scripts/publish-crate"
 
 
-class PublishCrateScriptTest(unittest.TestCase):
+class TestPublishCrateScript:
     def test_existing_version_succeeds_without_token_or_publish(self) -> None:
         result, cargo_calls, user_agent = self.run_script(status="200")
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Crate example-crate 1.2.3 already exists", result.stdout)
-        self.assertEqual(
-            user_agent,
-            "example-crate-publish (https://github.com/{{GITHUB_OWNER}}/{{REPO_NAME}})",
-        )
-        self.assertEqual(
-            cargo_calls,
-            ["metadata --locked --no-deps --format-version 1"],
-        )
+        assert result.returncode == 0, result.stderr
+        assert "Crate example-crate 1.2.3 already exists" in result.stdout
+        assert user_agent == "example-crate-publish (https://github.com/{{GITHUB_OWNER}}/{{REPO_NAME}})"
+        assert cargo_calls == ["metadata --locked --no-deps --format-version 1"]
 
     def test_missing_version_runs_dry_run_and_publish(self) -> None:
         result, cargo_calls, _ = self.run_script(status="404", token="trusted-token")
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Crate example-crate 1.2.3 is not published yet", result.stdout)
-        self.assertEqual(
-            cargo_calls,
-            [
-                "metadata --locked --no-deps --format-version 1",
-                "publish --dry-run --package example-crate --registry crates-io --locked",
-                "publish --package example-crate --registry crates-io --locked",
-            ],
-        )
+        assert result.returncode == 0, result.stderr
+        assert "Crate example-crate 1.2.3 is not published yet" in result.stdout
+        assert cargo_calls == [
+            "metadata --locked --no-deps --format-version 1",
+            "publish --dry-run --package example-crate --registry crates-io --locked",
+            "publish --package example-crate --registry crates-io --locked",
+        ]
 
     def test_missing_version_requires_token_after_dry_run(self) -> None:
         result, cargo_calls, _ = self.run_script(status="404")
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "crates.io trusted publishing did not provide a token",
-            result.stdout,
-        )
-        self.assertEqual(
-            cargo_calls,
-            [
-                "metadata --locked --no-deps --format-version 1",
-                "publish --dry-run --package example-crate --registry crates-io --locked",
-            ],
-        )
+        assert result.returncode != 0
+        assert "crates.io trusted publishing did not provide a token" in result.stdout
+        assert cargo_calls == [
+            "metadata --locked --no-deps --format-version 1",
+            "publish --dry-run --package example-crate --registry crates-io --locked",
+        ]
 
     def test_package_version_must_match_release_version(self) -> None:
         result, cargo_calls, _ = self.run_script(
@@ -62,15 +46,9 @@ class PublishCrateScriptTest(unittest.TestCase):
             crate_version="1.2.4",
         )
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "Cargo package version 1.2.4 does not match release tag v1.2.3",
-            result.stdout,
-        )
-        self.assertEqual(
-            cargo_calls,
-            ["metadata --locked --no-deps --format-version 1"],
-        )
+        assert result.returncode != 0
+        assert "Cargo package version 1.2.4 does not match release tag v1.2.3" in result.stdout
+        assert cargo_calls == ["metadata --locked --no-deps --format-version 1"]
 
     def run_script(
         self,
@@ -169,7 +147,3 @@ class PublishCrateScriptTest(unittest.TestCase):
             encoding="utf-8",
         )
         curl.chmod(0o755)
-
-
-if __name__ == "__main__":
-    unittest.main()

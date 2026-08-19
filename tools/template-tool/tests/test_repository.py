@@ -2,18 +2,20 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import tempfile
 import tomllib
-import unittest
 from pathlib import Path
+
+import pytest
 
 from template_tool import TemplateError, TemplateRepository
 from template_tool.application import prepare_template
 
 
-class TemplateRepositoryTest(unittest.TestCase):
-    def setUp(self) -> None:
+class TestTemplateRepository:
+    def setup_method(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
         self.output_directory = tempfile.TemporaryDirectory()
@@ -21,7 +23,7 @@ class TemplateRepositoryTest(unittest.TestCase):
         (self.root / "shared/static").mkdir(parents=True)
         (self.root / "overlays/example/static").mkdir(parents=True)
 
-    def tearDown(self) -> None:
+    def teardown_method(self) -> None:
         self.output_directory.cleanup()
         self.temporary_directory.cleanup()
 
@@ -52,15 +54,15 @@ class TemplateRepositoryTest(unittest.TestCase):
         repository.render("example")
 
         output = self.root / "templates/example"
-        self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o755)
-        self.assertEqual((output / "LICENSE").read_bytes(), b"license\n")
-        self.assertTrue((output / "run").stat().st_mode & stat.S_IXUSR)
-        self.assertTrue(repository.check("example").matches)
+        assert (stat.S_IMODE(output.stat().st_mode)) == (0o755)
+        assert ((output / "LICENSE").read_bytes()) == (b"license\n")
+        assert (output / "run").stat().st_mode & stat.S_IXUSR
+        assert repository.check("example").matches
 
         (output / "LICENSE").write_bytes(b"changed\n")
         result = repository.check("example")
-        self.assertFalse(result.matches)
-        self.assertTrue(any("LICENSE" in difference for difference in result.differences))
+        assert not (result.matches)
+        assert any("LICENSE" in difference for difference in result.differences)
 
     def test_capability_outputs_filter_exact_paths_and_directory_prefixes(self) -> None:
         self.write_config(
@@ -82,8 +84,8 @@ class TemplateRepositoryTest(unittest.TestCase):
         repository = TemplateRepository(self.root)
         repository.render("example")
         default_output = self.root / "templates/example"
-        self.assertTrue((default_output / "docs/index.md").is_file())
-        self.assertTrue((default_output / "docs.yml").is_file())
+        assert (default_output / "docs/index.md").is_file()
+        assert (default_output / "docs.yml").is_file()
 
         custom_output = self.output_root / "custom"
         repository.render_to(
@@ -94,10 +96,10 @@ class TemplateRepositoryTest(unittest.TestCase):
             ),
         )
 
-        self.assertEqual((custom_output / "README.md").read_text(), "readme\n")
-        self.assertFalse((custom_output / "docs").exists())
-        self.assertFalse((custom_output / "docs.yml").exists())
-        self.assertTrue((default_output / "docs/index.md").is_file())
+        assert ((custom_output / "README.md").read_text()) == ("readme\n")
+        assert not ((custom_output / "docs").exists())
+        assert not ((custom_output / "docs.yml").exists())
+        assert (default_output / "docs/index.md").is_file()
 
     def test_check_ignores_only_gitignored_extra_paths(self) -> None:
         self.write_config()
@@ -111,12 +113,12 @@ class TemplateRepositoryTest(unittest.TestCase):
         output = self.root / "templates/example"
         (output / "cache").mkdir()
         (output / "cache/artifact").write_text("cache", encoding="utf-8")
-        self.assertTrue(repository.check("example").matches)
+        assert repository.check("example").matches
 
         (output / "unexpected").write_text("unexpected", encoding="utf-8")
         result = repository.check("example")
-        self.assertFalse(result.matches)
-        self.assertIn("unexpected path: unexpected", result.differences)
+        assert not (result.matches)
+        assert ("unexpected path: unexpected") in (result.differences)
 
     def test_path_rules_only_resolve_real_conflicts_or_omit(self) -> None:
         (self.root / "shared/static/shared-only").write_text("shared", encoding="utf-8")
@@ -131,15 +133,15 @@ class TemplateRepositoryTest(unittest.TestCase):
         repository = TemplateRepository(self.root)
         repository.render("example")
         output = self.root / "templates/example"
-        self.assertEqual((output / "conflict").read_text(), "overlay")
-        self.assertFalse((output / "shared-only").exists())
+        assert ((output / "conflict").read_text()) == ("overlay")
+        assert not ((output / "shared-only").exists())
 
         self.write_config(
             '[templates.example.paths]\n'
             'conflict = "overlay"\n'
             'shared-only = "shared"\n'
         )
-        with self.assertRaisesRegex(TemplateError, "redundant"):
+        with pytest.raises(TemplateError, match="redundant"):
             TemplateRepository(self.root).render("example")
 
     def test_unresolved_cross_owner_conflict_fails(self) -> None:
@@ -148,7 +150,7 @@ class TemplateRepositoryTest(unittest.TestCase):
         (self.root / "overlays/example/static/conflict").write_text(
             "overlay", encoding="utf-8"
         )
-        with self.assertRaisesRegex(TemplateError, "unresolved"):
+        with pytest.raises(TemplateError, match="unresolved"):
             TemplateRepository(self.root).render("example")
 
     def test_layout_renders_bound_fragments_with_custom_delimiters(self) -> None:
@@ -166,10 +168,7 @@ class TemplateRepositoryTest(unittest.TestCase):
         )
 
         TemplateRepository(self.root).render("example")
-        self.assertEqual(
-            (self.root / "templates/example/ci.yml").read_text(),
-            "expr: ${{ github.ref }}\n- run: mise run check\n",
-        )
+        assert ((self.root / "templates/example/ci.yml").read_text()) == ("expr: ${{ github.ref }}\n- run: mise run check\n")
 
     def test_layout_rejects_multiple_consecutive_blank_lines(self) -> None:
         (self.root / "shared/layouts").mkdir(parents=True)
@@ -178,10 +177,7 @@ class TemplateRepositoryTest(unittest.TestCase):
         )
         self.write_config()
 
-        with self.assertRaisesRegex(
-            TemplateError,
-            r"more than one consecutive blank line at output line 2: .*README\.md\.j2",
-        ):
+        with pytest.raises(TemplateError, match=r"more than one consecutive blank line at output line 2: .*README\.md\.j2"):
             TemplateRepository(self.root).render("example")
 
     def test_layout_allows_one_blank_line(self) -> None:
@@ -193,10 +189,7 @@ class TemplateRepositoryTest(unittest.TestCase):
 
         TemplateRepository(self.root).render("example")
 
-        self.assertEqual(
-            (self.root / "templates/example/README.md").read_text(),
-            "first section\n\nsecond section\n",
-        )
+        assert ((self.root / "templates/example/README.md").read_text()) == ("first section\n\nsecond section\n")
 
     def test_layout_rejects_multiple_leading_blank_lines(self) -> None:
         (self.root / "shared/layouts").mkdir(parents=True)
@@ -205,10 +198,7 @@ class TemplateRepositoryTest(unittest.TestCase):
         )
         self.write_config()
 
-        with self.assertRaisesRegex(
-            TemplateError,
-            r"more than one consecutive blank line at output line 2: .*README\.md\.j2",
-        ):
+        with pytest.raises(TemplateError, match=r"more than one consecutive blank line at output line 2: .*README\.md\.j2"):
             TemplateRepository(self.root).render("example")
 
     def test_conditional_slot_binding_is_omitted_when_capability_is_disabled(self) -> None:
@@ -237,13 +227,8 @@ class TemplateRepositoryTest(unittest.TestCase):
             enabled_capabilities=("release",),
         )
 
-        self.assertEqual(
-            (self.output_root / "disabled/ci.yml").read_text(), "steps:\n"
-        )
-        self.assertEqual(
-            (self.output_root / "enabled/ci.yml").read_text(),
-            "steps:\n- run: package\n",
-        )
+        assert ((self.output_root / "disabled/ci.yml").read_text()) == ("steps:\n")
+        assert ((self.output_root / "enabled/ci.yml").read_text()) == ("steps:\n- run: package\n")
 
     def test_variant_slot_binding_replaces_default_fragments(self) -> None:
         (self.root / "shared/layouts").mkdir(parents=True)
@@ -275,14 +260,8 @@ class TemplateRepositoryTest(unittest.TestCase):
             enabled_capabilities=("crates-io-publish",),
         )
 
-        self.assertEqual(
-            (self.output_root / "disabled/Cargo.toml").read_text(),
-            "[package]\npublish = false\n",
-        )
-        self.assertEqual(
-            (self.output_root / "enabled/Cargo.toml").read_text(),
-            '[package]\npublish = ["crates-io"]\n',
-        )
+        assert ((self.output_root / "disabled/Cargo.toml").read_text()) == ("[package]\npublish = false\n")
+        assert ((self.output_root / "enabled/Cargo.toml").read_text()) == ('[package]\npublish = ["crates-io"]\n')
 
     def test_capability_output_selectors_must_be_disjoint_and_match_sources(self) -> None:
         (self.root / "shared/static/docs").mkdir()
@@ -298,14 +277,13 @@ class TemplateRepositoryTest(unittest.TestCase):
             ('docs-site = ["docs/*.md"]\n', "must not use glob syntax"),
         )
         for declaration, message in cases:
-            with self.subTest(declaration=declaration):
-                self.write_config(
-                    "docs-site = true\n"
-                    "[templates.example.capability_outputs]\n"
-                    + declaration
-                )
-                with self.assertRaisesRegex(TemplateError, message):
-                    TemplateRepository(self.root).render("example")
+            self.write_config(
+                "docs-site = true\n"
+                "[templates.example.capability_outputs]\n"
+                + declaration
+            )
+            with pytest.raises(TemplateError, match=message):
+                TemplateRepository(self.root).render("example")
 
     def test_conditional_binding_requires_optional_slot(self) -> None:
         (self.root / "shared/layouts").mkdir(parents=True)
@@ -323,15 +301,13 @@ class TemplateRepositoryTest(unittest.TestCase):
             'fragments = ["shared:tasks/package.yml.j2"] }\n'
         )
 
-        with self.assertRaisesRegex(TemplateError, "requires an optional slot"):
+        with pytest.raises(TemplateError, match="requires an optional slot"):
             TemplateRepository(self.root).render("example")
 
     def test_every_capability_must_affect_an_output_or_slot_binding(self) -> None:
         self.write_config("unused = false\n")
 
-        with self.assertRaisesRegex(
-            TemplateError, "capability has no delivery effect.*unused"
-        ):
+        with pytest.raises(TemplateError, match="capability has no delivery effect.*unused"):
             TemplateRepository(self.root).render("example")
 
     def test_capability_ownership_rejects_undeclared_capabilities(self) -> None:
@@ -349,10 +325,9 @@ class TemplateRepositoryTest(unittest.TestCase):
             ),
         )
         for body, message in cases:
-            with self.subTest(body=body):
-                self.write_config(body)
-                with self.assertRaisesRegex(TemplateError, message):
-                    TemplateRepository(self.root)
+            self.write_config(body)
+            with pytest.raises(TemplateError, match=message):
+                TemplateRepository(self.root)
 
     def test_capability_bindings_require_non_empty_fragment_groups(self) -> None:
         cases = (
@@ -364,16 +339,15 @@ class TemplateRepositoryTest(unittest.TestCase):
             ),
         )
         for declaration, message in cases:
-            with self.subTest(declaration=declaration):
-                self.write_config(
-                    "release = false\n"
-                    '[templates.example.slots."ci.yml"]\n'
-                    'steps = { capability = "release", '
-                    + declaration
-                    + " }\n"
-                )
-                with self.assertRaisesRegex(TemplateError, message):
-                    TemplateRepository(self.root)
+            self.write_config(
+                "release = false\n"
+                '[templates.example.slots."ci.yml"]\n'
+                'steps = { capability = "release", '
+                + declaration
+                + " }\n"
+            )
+            with pytest.raises(TemplateError, match=message):
+                TemplateRepository(self.root)
 
     def test_render_and_check_use_only_default_capability_set(self) -> None:
         self.write_config(
@@ -391,17 +365,17 @@ class TemplateRepositoryTest(unittest.TestCase):
         repository = TemplateRepository(self.root)
         repository.render("example")
         snapshot = self.root / "templates/example"
-        self.assertFalse((snapshot / "release.yml").exists())
-        self.assertTrue(repository.check("example").matches)
+        assert not ((snapshot / "release.yml").exists())
+        assert repository.check("example").matches
 
         repository.render_to(
             "example",
             self.output_root / "enabled",
             enabled_capabilities=("release",),
         )
-        self.assertTrue((self.output_root / "enabled/release.yml").is_file())
-        self.assertFalse((snapshot / "release.yml").exists())
-        self.assertTrue(repository.check("example").matches)
+        assert (self.output_root / "enabled/release.yml").is_file()
+        assert not ((snapshot / "release.yml").exists())
+        assert repository.check("example").matches
 
     def test_directory_selector_does_not_match_same_named_file(self) -> None:
         self.write_config(
@@ -411,7 +385,7 @@ class TemplateRepositoryTest(unittest.TestCase):
         )
         (self.root / "shared/static/docs").write_text("file\n", encoding="utf-8")
 
-        with self.assertRaisesRegex(TemplateError, "does not match any output"):
+        with pytest.raises(TemplateError, match="does not match any output"):
             TemplateRepository(self.root).render("example")
 
     def test_capability_output_rejects_cross_capability_selector_overlap(self) -> None:
@@ -427,9 +401,7 @@ class TemplateRepositoryTest(unittest.TestCase):
             "documentation\n", encoding="utf-8"
         )
 
-        with self.assertRaisesRegex(
-            TemplateError, "matched by multiple capability output selectors"
-        ):
+        with pytest.raises(TemplateError, match="matched by multiple capability output selectors"):
             TemplateRepository(self.root).render("example")
 
     def test_inactive_fragment_branches_are_still_validated(self) -> None:
@@ -454,21 +426,20 @@ class TemplateRepositoryTest(unittest.TestCase):
             ),
         )
         for declaration, enabled in cases:
-            with self.subTest(declaration=declaration):
-                self.write_config(
-                    "release = false\n"
-                    '[templates.example.slots."Cargo.toml"]\n'
-                    'publish = { capability = "release", '
-                    + declaration
-                    + " }\n"
+            self.write_config(
+                "release = false\n"
+                '[templates.example.slots."Cargo.toml"]\n'
+                'publish = { capability = "release", '
+                + declaration
+                + " }\n"
+            )
+            repository = TemplateRepository(self.root)
+            with pytest.raises(TemplateError, match="invalid fragment reference"):
+                repository.render_to(
+                    "example",
+                    self.output_root / "output",
+                    enabled_capabilities=enabled,
                 )
-                repository = TemplateRepository(self.root)
-                with self.assertRaisesRegex(TemplateError, "invalid fragment reference"):
-                    repository.render_to(
-                        "example",
-                        self.output_root / "output",
-                        enabled_capabilities=enabled,
-                    )
 
     def test_disabled_owned_layout_still_validates_required_slots(self) -> None:
         (self.root / "shared/layouts").mkdir(parents=True)
@@ -482,7 +453,7 @@ class TemplateRepositoryTest(unittest.TestCase):
         )
 
         repository = TemplateRepository(self.root)
-        with self.assertRaisesRegex(TemplateError, "does not bind required slot"):
+        with pytest.raises(TemplateError, match="does not bind required slot"):
             repository.render_to(
                 "example", self.output_root / "disabled", enabled_capabilities=()
             )
@@ -496,7 +467,7 @@ class TemplateRepositoryTest(unittest.TestCase):
         os.symlink("../outside", self.root / "shared/static/docs-link")
 
         repository = TemplateRepository(self.root)
-        with self.assertRaisesRegex(TemplateError, "symlink escapes"):
+        with pytest.raises(TemplateError, match="symlink escapes"):
             repository.render_to(
                 "example", self.output_root / "disabled", enabled_capabilities=()
             )
@@ -516,20 +487,17 @@ class TemplateRepositoryTest(unittest.TestCase):
             self.root / "config/generated",
             self.root / "tools/generated",
         ):
-            with self.subTest(destination=destination):
-                with self.assertRaisesRegex(
-                    TemplateError, "destination must be outside repository-owned paths"
-                ):
-                    repository.render_to(
-                        "example", destination, enabled_capabilities=()
-                    )
-        self.assertEqual(ancestor_marker.read_text(), "keep\n")
+            with pytest.raises(TemplateError, match="destination must be outside repository-owned paths"):
+                repository.render_to(
+                    "example", destination, enabled_capabilities=()
+                )
+        assert (ancestor_marker.read_text()) == ("keep\n")
         ancestor_marker.unlink()
 
     def test_static_symlink_must_stay_inside_template(self) -> None:
         self.write_config()
         os.symlink("../outside", self.root / "shared/static/link")
-        with self.assertRaisesRegex(TemplateError, "escapes"):
+        with pytest.raises(TemplateError, match="escapes"):
             TemplateRepository(self.root).render("example")
 
     def test_instantiation_profile_requires_valid_validation_metadata(self) -> None:
@@ -545,7 +513,7 @@ class TemplateRepositoryTest(unittest.TestCase):
             'project_name = "REPLACE ME: project name"\n',
             encoding="utf-8",
         )
-        with self.assertRaisesRegex(TemplateError, "missing required metadata"):
+        with pytest.raises(TemplateError, match="missing required metadata"):
             TemplateRepository(self.root)
 
     def test_instantiation_profile_requires_complete_export_metadata(self) -> None:
@@ -556,7 +524,7 @@ class TemplateRepositoryTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-        with self.assertRaisesRegex(TemplateError, "invalid export metadata"):
+        with pytest.raises(TemplateError, match="invalid export metadata"):
             TemplateRepository(self.root)
 
     def test_renovate_module_generates_root_and_template_configs(self) -> None:
@@ -601,18 +569,12 @@ class TemplateRepositoryTest(unittest.TestCase):
         template_config = json.loads(
             (self.root / "templates/example/renovate.json").read_text()
         )
-        self.assertEqual(root_config["ignorePaths"], ["templates/**"])
-        self.assertEqual(
-            [rule["description"] for rule in root_config["packageRules"]],
-            ["base", "root"],
-        )
-        self.assertEqual(template_config["enabledManagers"], ["npm"])
-        self.assertEqual(
-            [rule["description"] for rule in template_config["packageRules"]],
-            ["base", "template"],
-        )
-        self.assertTrue(repository.check_repository().matches)
-        self.assertTrue(repository.check("example").matches)
+        assert (root_config["ignorePaths"]) == (["templates/**"])
+        assert ([rule["description"] for rule in root_config["packageRules"]]) == (["base", "root"])
+        assert (template_config["enabledManagers"]) == (["npm"])
+        assert ([rule["description"] for rule in template_config["packageRules"]]) == (["base", "template"])
+        assert repository.check_repository().matches
+        assert repository.check("example").matches
 
     def test_renovate_module_rejects_duplicate_top_level_ownership(self) -> None:
         self.write_config()
@@ -625,7 +587,7 @@ class TemplateRepositoryTest(unittest.TestCase):
             '{"enabledManagers": ["npm"]}', encoding="utf-8"
         )
 
-        with self.assertRaisesRegex(TemplateError, "duplicate top-level keys"):
+        with pytest.raises(TemplateError, match="duplicate top-level keys"):
             TemplateRepository(self.root).render("example")
 
     def test_renovate_capability_contribution_is_filtered_and_validated(self) -> None:
@@ -678,10 +640,10 @@ class TemplateRepositoryTest(unittest.TestCase):
             (self.output_root / "disabled/renovate.json").read_text()
         )
         enabled = json.loads((self.output_root / "enabled/renovate.json").read_text())
-        self.assertEqual(disabled["enabledManagers"], ["mise"])
-        self.assertNotIn("packageRules", disabled)
-        self.assertEqual(enabled["enabledManagers"], ["mise", "npm"])
-        self.assertEqual(enabled["packageRules"][0]["description"], "documentation")
+        assert (disabled["enabledManagers"]) == (["mise"])
+        assert ("packageRules") not in (disabled)
+        assert (enabled["enabledManagers"]) == (["mise", "npm"])
+        assert (enabled["packageRules"][0]["description"]) == ("documentation")
 
         profile_path.write_text(
             json.dumps(
@@ -693,9 +655,7 @@ class TemplateRepositoryTest(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        with self.assertRaisesRegex(
-            TemplateError, "contribution references undeclared capability"
-        ):
+        with pytest.raises(TemplateError, match="contribution references undeclared capability"):
             TemplateRepository(self.root).render("example")
 
     def test_docs_site_capability_renders_complete_profile_variants(self) -> None:
@@ -705,93 +665,84 @@ class TemplateRepositoryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output_root = Path(temporary)
             for template in ("common", "go-cli", "rust"):
-                with self.subTest(template=template):
-                    enabled_capabilities = repository.resolve_capabilities(template)
-                    disabled_capabilities = tuple(
-                        capability
-                        for capability in enabled_capabilities
-                        if capability != "docs-site"
-                    )
-                    enabled = output_root / template / "enabled"
-                    disabled = output_root / template / "disabled"
-                    repository.render_to(
-                        template,
-                        enabled,
-                        enabled_capabilities=enabled_capabilities,
-                    )
-                    repository.render_to(
-                        template,
-                        disabled,
-                        enabled_capabilities=disabled_capabilities,
-                    )
+                enabled_capabilities = repository.resolve_capabilities(template)
+                disabled_capabilities = tuple(
+                    capability
+                    for capability in enabled_capabilities
+                    if capability != "docs-site"
+                )
+                enabled = output_root / template / "enabled"
+                disabled = output_root / template / "disabled"
+                repository.render_to(
+                    template,
+                    enabled,
+                    enabled_capabilities=enabled_capabilities,
+                )
+                repository.render_to(
+                    template,
+                    disabled,
+                    enabled_capabilities=disabled_capabilities,
+                )
 
-                    self.assertTrue((enabled / "docs/package.json").is_file())
-                    self.assertTrue(
-                        (enabled / ".github/workflows/docs.yml").is_file()
-                    )
-                    self.assertFalse((disabled / "docs").exists())
-                    self.assertFalse(
-                        (disabled / ".github/workflows/docs.yml").exists()
-                    )
+                assert (enabled / "docs/package.json").is_file()
+                assert (enabled / ".github/workflows/docs.yml").is_file()
+                assert not ((disabled / "docs").exists())
+                assert not ((disabled / ".github/workflows/docs.yml").exists())
 
-                    enabled_mise = (enabled / "mise.toml").read_text()
-                    disabled_mise = (disabled / "mise.toml").read_text()
-                    self.assertIn('node = "26"', enabled_mise)
-                    self.assertIn('pnpm = "11"', enabled_mise)
-                    self.assertIn("[tasks.'docs:build']", enabled_mise)
-                    self.assertNotIn('node = "26"', disabled_mise)
-                    self.assertNotIn('pnpm = "11"', disabled_mise)
-                    self.assertNotIn("docs:build", disabled_mise)
+                enabled_mise = (enabled / "mise.toml").read_text()
+                disabled_mise = (disabled / "mise.toml").read_text()
+                assert ('node = "26"') in (enabled_mise)
+                assert ('pnpm = "11"') in (enabled_mise)
+                assert ("[tasks.'docs:build']") in (enabled_mise)
+                assert ('node = "26"') not in (disabled_mise)
+                assert ('pnpm = "11"') not in (disabled_mise)
+                assert ("docs:build") not in (disabled_mise)
 
-                    enabled_ci = (enabled / ".github/workflows/ci.yml").read_text()
-                    disabled_ci = (disabled / ".github/workflows/ci.yml").read_text()
-                    self.assertIn("  docs:\n", enabled_ci)
-                    self.assertNotIn("  docs:\n", disabled_ci)
-                    self.assertEqual(enabled_ci, enabled_ci.rstrip() + "\n")
-                    self.assertEqual(disabled_ci, disabled_ci.rstrip() + "\n")
-                    self.assertEqual(enabled_mise, enabled_mise.rstrip() + "\n")
-                    self.assertEqual(disabled_mise, disabled_mise.rstrip() + "\n")
+                enabled_ci = (enabled / ".github/workflows/ci.yml").read_text()
+                disabled_ci = (disabled / ".github/workflows/ci.yml").read_text()
+                assert ("  docs:\n") in (enabled_ci)
+                assert ("  docs:\n") not in (disabled_ci)
+                assert (enabled_ci) == (enabled_ci.rstrip() + "\n")
+                assert (disabled_ci) == (disabled_ci.rstrip() + "\n")
+                assert (enabled_mise) == (enabled_mise.rstrip() + "\n")
+                assert (disabled_mise) == (disabled_mise.rstrip() + "\n")
 
-                    enabled_readme = (enabled / "README.md").read_text()
-                    disabled_readme = (disabled / "README.md").read_text()
-                    self.assertIn("docs-online-blue", enabled_readme)
-                    self.assertIn("## Documentation", enabled_readme)
-                    self.assertNotIn("docs-online-blue", disabled_readme)
-                    self.assertNotIn("## Documentation", disabled_readme)
+                enabled_readme = (enabled / "README.md").read_text()
+                disabled_readme = (disabled / "README.md").read_text()
+                assert ("docs-online-blue") in (enabled_readme)
+                assert ("## Documentation") in (enabled_readme)
+                assert ("docs-online-blue") not in (disabled_readme)
+                assert ("## Documentation") not in (disabled_readme)
 
-                    enabled_contributing = (enabled / "CONTRIBUTING.md").read_text()
-                    disabled_contributing = (
-                        disabled / "CONTRIBUTING.md"
-                    ).read_text()
-                    self.assertIn("Documentation Site", enabled_contributing)
-                    self.assertNotIn("Documentation Site", disabled_contributing)
+                enabled_contributing = (enabled / "CONTRIBUTING.md").read_text()
+                disabled_contributing = (
+                    disabled / "CONTRIBUTING.md"
+                ).read_text()
+                assert ("Documentation Site") in (enabled_contributing)
+                assert ("Documentation Site") not in (disabled_contributing)
 
-                    enabled_gitignore = (enabled / ".gitignore").read_text()
-                    disabled_gitignore = (disabled / ".gitignore").read_text()
-                    self.assertIn("/docs/node_modules/", enabled_gitignore)
-                    self.assertNotIn("/docs/node_modules/", disabled_gitignore)
-                    self.assertFalse(disabled_gitignore.startswith("\n"))
+                enabled_gitignore = (enabled / ".gitignore").read_text()
+                disabled_gitignore = (disabled / ".gitignore").read_text()
+                assert ("/docs/node_modules/") in (enabled_gitignore)
+                assert ("/docs/node_modules/") not in (disabled_gitignore)
+                assert not (disabled_gitignore.startswith("\n"))
 
-                    enabled_renovate = json.loads(
-                        (enabled / "renovate.json").read_text()
+                enabled_renovate = json.loads(
+                    (enabled / "renovate.json").read_text()
+                )
+                disabled_renovate = json.loads(
+                    (disabled / "renovate.json").read_text()
+                )
+                assert ("npm") in (enabled_renovate["enabledManagers"])
+                assert ("npm") not in (disabled_renovate["enabledManagers"])
+                assert any(
+                        rule.get("matchManagers") == ["npm"]
+                        for rule in enabled_renovate["packageRules"]
                     )
-                    disabled_renovate = json.loads(
-                        (disabled / "renovate.json").read_text()
-                    )
-                    self.assertIn("npm", enabled_renovate["enabledManagers"])
-                    self.assertNotIn("npm", disabled_renovate["enabledManagers"])
-                    self.assertTrue(
-                        any(
-                            rule.get("matchManagers") == ["npm"]
-                            for rule in enabled_renovate["packageRules"]
-                        )
-                    )
-                    self.assertFalse(
-                        any(
-                            rule.get("matchManagers") == ["npm"]
-                            for rule in disabled_renovate["packageRules"]
-                        )
-                    )
+                assert not (any(
+                        rule.get("matchManagers") == ["npm"]
+                        for rule in disabled_renovate["packageRules"]
+                    ))
 
     def test_codecov_upload_capability_renders_complete_profile_variants(self) -> None:
         repository_root = Path(__file__).resolve().parents[3]
@@ -805,76 +756,62 @@ class TemplateRepositoryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output_root = Path(temporary)
             for template, report in reports.items():
-                with self.subTest(template=template):
-                    disabled = output_root / template / "disabled"
-                    enabled = output_root / template / "enabled"
-                    repository.render_to(template, disabled, enabled_capabilities=())
-                    repository.render_to(
-                        template,
-                        enabled,
-                        enabled_capabilities=("codecov-upload",),
-                    )
+                disabled = output_root / template / "disabled"
+                enabled = output_root / template / "enabled"
+                repository.render_to(template, disabled, enabled_capabilities=())
+                repository.render_to(
+                    template,
+                    enabled,
+                    enabled_capabilities=("codecov-upload",),
+                )
 
-                    disabled_ci = (disabled / ".github/workflows/ci.yml").read_text()
-                    disabled_mise = (disabled / "mise.toml").read_text()
-                    disabled_ci_mise = (disabled / "mise.ci.toml").read_text()
-                    self.assertNotIn("  coverage:\n", disabled_ci)
-                    self.assertNotIn("[tasks.coverage]", disabled_mise)
-                    self.assertNotIn("codecov-cli", disabled_ci_mise)
-                    self.assertNotIn(f"/{report}", (disabled / ".gitignore").read_text())
-                    self.assertFalse(
-                        (disabled / ".github/workflows/coverage.yml").exists()
-                    )
+                disabled_ci = (disabled / ".github/workflows/ci.yml").read_text()
+                disabled_mise = (disabled / "mise.toml").read_text()
+                disabled_ci_mise = (disabled / "mise.ci.toml").read_text()
+                assert ("  coverage:\n") not in (disabled_ci)
+                assert ("[tasks.coverage]") not in (disabled_mise)
+                assert ("codecov-cli") not in (disabled_ci_mise)
+                assert (f"/{report}") not in ((disabled / ".gitignore").read_text())
+                assert not ((disabled / ".github/workflows/coverage.yml").exists())
 
-                    enabled_ci = (enabled / ".github/workflows/ci.yml").read_text()
-                    coverage = (
-                        enabled / ".github/workflows/coverage.yml"
-                    ).read_text()
-                    enabled_mise = (enabled / "mise.toml").read_text()
-                    enabled_ci_mise = (enabled / "mise.ci.toml").read_text()
-                    self.assertIn("  coverage:\n", enabled_ci)
-                    self.assertIn(
-                        "if: ${{ github.event_name == 'pull_request' }}", enabled_ci
-                    )
-                    self.assertIn("    contents: read\n", enabled_ci)
-                    self.assertNotIn("id-token: write", enabled_ci)
-                    self.assertNotIn("use_oidc:", enabled_ci)
-                    self.assertIn("push:\n    branches: [main]", coverage)
-                    self.assertIn("workflow_dispatch:", coverage)
-                    self.assertIn(
-                        "github.event_name == 'push' || github.ref == 'refs/heads/main'",
-                        coverage,
-                    )
-                    self.assertIn("id-token: write", coverage)
-                    self.assertIn("group: coverage-${{ github.ref }}", coverage)
-                    self.assertIn("cancel-in-progress: true", coverage)
-                    self.assertIn("use_oidc: true", coverage)
+                enabled_ci = (enabled / ".github/workflows/ci.yml").read_text()
+                coverage = (
+                    enabled / ".github/workflows/coverage.yml"
+                ).read_text()
+                enabled_mise = (enabled / "mise.toml").read_text()
+                enabled_ci_mise = (enabled / "mise.ci.toml").read_text()
+                assert ("  coverage:\n") in (enabled_ci)
+                assert ("if: ${{ github.event_name == 'pull_request' }}") in (enabled_ci)
+                assert ("    contents: read\n") in (enabled_ci)
+                assert ("id-token: write") not in (enabled_ci)
+                assert ("use_oidc:") not in (enabled_ci)
+                assert ("push:\n    branches: [main]") in (coverage)
+                assert ("workflow_dispatch:") in (coverage)
+                assert ("github.event_name == 'push' || github.ref == 'refs/heads/main'") in (coverage)
+                assert ("id-token: write") in (coverage)
+                assert ("group: coverage-${{ github.ref }}") in (coverage)
+                assert ("cancel-in-progress: true") in (coverage)
+                assert ("use_oidc: true") in (coverage)
 
-                    for workflow in (enabled_ci, coverage):
-                        self.assertIn("uses: codecov/codecov-action@v7", workflow)
-                        self.assertIn(
-                            "binary: ${{ steps.codecov-cli.outputs.path }}", workflow
-                        )
-                        self.assertIn(
-                            "files: ${{ steps.coverage.outputs.report }}", workflow
-                        )
-                        self.assertIn("disable_search: true", workflow)
-                        self.assertIn("fail_ci_if_error: true", workflow)
-                        self.assertIn("mise which codecovcli", workflow)
-                        self.assertNotIn("CODECOV_TOKEN", workflow)
-                        self.assertNotIn("override_branch", workflow)
-                        self.assertNotIn("override_pr", workflow)
-                        self.assertNotIn("skip_validation", workflow)
+                for workflow in (enabled_ci, coverage):
+                    assert ("uses: codecov/codecov-action@v7") in (workflow)
+                    assert ("binary: ${{ steps.codecov-cli.outputs.path }}") in (workflow)
+                    assert ("files: ${{ steps.coverage.outputs.report }}") in (workflow)
+                    assert ("disable_search: true") in (workflow)
+                    assert ("fail_ci_if_error: true") in (workflow)
+                    assert ("mise which codecovcli") in (workflow)
+                    assert ("CODECOV_TOKEN") not in (workflow)
+                    assert ("override_branch") not in (workflow)
+                    assert ("override_pr") not in (workflow)
+                    assert ("skip_validation") not in (workflow)
 
-                    self.assertIn("[tasks.coverage]", enabled_mise)
-                    self.assertIn(f"/{report}", (enabled / ".gitignore").read_text())
-                    self.assertIn('"pipx:codecov-cli" = "11"', enabled_ci_mise)
-                    if template == "rust":
-                        self.assertIn(
-                            '"cargo:cargo-llvm-cov" = "0.8"', enabled_ci_mise
-                        )
-                    else:
-                        self.assertNotIn("cargo-llvm-cov", enabled_ci_mise)
+                assert ("[tasks.coverage]") in (enabled_mise)
+                assert (f"/{report}") in ((enabled / ".gitignore").read_text())
+                assert ('"pipx:codecov-cli" = "11"') in (enabled_ci_mise)
+                if template == "rust":
+                    assert ('"cargo:cargo-llvm-cov" = "0.8"') in (enabled_ci_mise)
+                else:
+                    assert ("cargo-llvm-cov") not in (enabled_ci_mise)
 
     def test_export_metadata_instantiates_every_profile_and_derived_value(self) -> None:
         repository_root = Path(__file__).resolve().parents[3]
@@ -883,44 +820,36 @@ class TemplateRepositoryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output_root = Path(temporary)
             for template in ("common", "go-cli", "rust"):
-                with self.subTest(template=template):
-                    metadata = repository.export_metadata(template)
-                    if template == "rust":
-                        metadata["description"] = 'Replace "this" description'
-                    output = output_root / template
-                    prepare_template(
-                        repository,
-                        template,
-                        output,
-                        metadata=metadata,
-                    )
+                metadata = repository.export_metadata(template)
+                if template == "rust":
+                    metadata["description"] = 'Replace "this" description'
+                output = output_root / template
+                prepare_template(
+                    repository,
+                    template,
+                    output,
+                    metadata=metadata,
+                )
 
-                    for path in output.rglob("*"):
-                        self.assertNotRegex(
-                            str(path.relative_to(output)), r"\{\{[A-Z]"
-                        )
-                        if path.is_file():
-                            try:
-                                content = path.read_text(encoding="utf-8")
-                            except UnicodeDecodeError:
-                                continue
-                            self.assertNotRegex(content, r"\{\{[A-Z]")
+                for path in output.rglob("*"):
+                    assert not re.search(r"\{\{[A-Z]", str(path.relative_to(output)))
+                    if path.is_file():
+                        try:
+                            content = path.read_text(encoding="utf-8")
+                        except UnicodeDecodeError:
+                            continue
+                        assert not re.search(r"\{\{[A-Z]", content)
 
-                    if template == "go-cli":
-                        self.assertTrue(
-                            (output / "cmd/replace-me-binary/main.go").is_file()
-                        )
-                        self.assertEqual(
-                            (output / "go.mod").read_text(encoding="utf-8").splitlines()[0],
-                            "module example.invalid/replace-me-module",
-                        )
-                    if template == "rust":
-                        cargo = (output / "Cargo.toml").read_text(encoding="utf-8")
-                        main = (output / "src/main.rs").read_text(encoding="utf-8")
-                        docs = (output / "docs/index.md").read_text(encoding="utf-8")
-                        self.assertIn('description = "Replace \\"this\\" description"', cargo)
-                        self.assertIn("replace_me_package::greeting", main)
-                        self.assertIn('text: "Replace \\"this\\" description"', docs)
+                if template == "go-cli":
+                    assert (output / "cmd/replace-me-binary/main.go").is_file()
+                    assert ((output / "go.mod").read_text(encoding="utf-8").splitlines()[0]) == ("module example.invalid/replace-me-module")
+                if template == "rust":
+                    cargo = (output / "Cargo.toml").read_text(encoding="utf-8")
+                    main = (output / "src/main.rs").read_text(encoding="utf-8")
+                    docs = (output / "docs/index.md").read_text(encoding="utf-8")
+                    assert ('description = "Replace \\"this\\" description"') in (cargo)
+                    assert ("replace_me_package::greeting") in (main)
+                    assert ('text: "Replace \\"this\\" description"') in (docs)
 
     def test_rust_crates_io_publish_capability_renders_complete_variants(self) -> None:
         repository_root = Path(__file__).resolve().parents[3]
@@ -948,80 +877,59 @@ class TemplateRepositoryTest(unittest.TestCase):
 
             disabled_cargo = tomllib.loads((disabled / "Cargo.toml").read_text())
             enabled_cargo = tomllib.loads((enabled / "Cargo.toml").read_text())
-            self.assertEqual(disabled_cargo["package"]["publish"], False)
-            self.assertEqual(enabled_cargo["package"]["publish"], ["crates-io"])
-            self.assertEqual(
-                enabled_cargo["package"]["description"],
-                'Example "Rust" CLI description',
-            )
-            self.assertEqual(enabled_cargo["package"]["license"], "MIT")
-            self.assertEqual(
-                enabled_cargo["package"]["repository"],
-                "https://github.com/YewFence/example-rust-cli",
-            )
-            self.assertEqual(enabled_cargo["package"]["readme"], "README.md")
+            assert (disabled_cargo["package"]["publish"]) == (False)
+            assert (enabled_cargo["package"]["publish"]) == (["crates-io"])
+            assert (enabled_cargo["package"]["description"]) == ('Example "Rust" CLI description')
+            assert (enabled_cargo["package"]["license"]) == ("MIT")
+            assert (enabled_cargo["package"]["repository"]) == ("https://github.com/YewFence/example-rust-cli")
+            assert (enabled_cargo["package"]["readme"]) == ("README.md")
 
             disabled_mise = (disabled / "mise.ci.toml").read_text()
             enabled_mise = (enabled / "mise.ci.toml").read_text()
-            self.assertNotIn("crates-io:package:check", disabled_mise)
-            self.assertNotIn("crates-io:publish", disabled_mise)
-            self.assertNotIn('jq = "1"', disabled_mise)
-            self.assertIn('[tasks."crates-io:package:check"]', enabled_mise)
-            self.assertIn('run = "cargo package --locked"', enabled_mise)
-            self.assertIn('[tasks."crates-io:publish"]', enabled_mise)
-            self.assertIn('file = "scripts/publish-crate"', enabled_mise)
-            self.assertIn('jq = "1"', enabled_mise)
+            assert ("crates-io:package:check") not in (disabled_mise)
+            assert ("crates-io:publish") not in (disabled_mise)
+            assert ('jq = "1"') not in (disabled_mise)
+            assert ('[tasks."crates-io:package:check"]') in (enabled_mise)
+            assert ('run = "cargo package --locked"') in (enabled_mise)
+            assert ('[tasks."crates-io:publish"]') in (enabled_mise)
+            assert ('file = "scripts/publish-crate"') in (enabled_mise)
+            assert ('jq = "1"') in (enabled_mise)
 
             disabled_publish_script = disabled / "scripts/publish-crate"
             publish_script = enabled / "scripts/publish-crate"
-            self.assertFalse(disabled_publish_script.exists())
-            self.assertTrue(publish_script.stat().st_mode & stat.S_IXUSR)
+            assert not (disabled_publish_script.exists())
+            assert publish_script.stat().st_mode & stat.S_IXUSR
             publish_script_text = publish_script.read_text()
-            self.assertIn(
-                "cargo metadata --locked --no-deps --format-version 1",
-                publish_script_text,
-            )
-            self.assertIn(
-                "--user-agent \"${crate_name}-publish "
-                "(https://github.com/YewFence/example-rust-cli)\"",
-                publish_script_text,
-            )
-            self.assertIn("https://crates.io/api/v1/crates/", publish_script_text)
-            self.assertIn("cargo publish --dry-run", publish_script_text)
-            self.assertIn(
-                "crates.io trusted publishing did not provide a token",
-                publish_script_text,
-            )
+            assert ("cargo metadata --locked --no-deps --format-version 1") in (publish_script_text)
+            assert ("--user-agent \"${crate_name}-publish "
+                "(https://github.com/YewFence/example-rust-cli)\"") in (publish_script_text)
+            assert ("https://crates.io/api/v1/crates/") in (publish_script_text)
+            assert ("cargo publish --dry-run") in (publish_script_text)
+            assert ("crates.io trusted publishing did not provide a token") in (publish_script_text)
 
             disabled_ci = (disabled / ".github/workflows/ci.yml").read_text()
             enabled_ci = (enabled / ".github/workflows/ci.yml").read_text()
-            self.assertNotIn("crates-io:package:check", disabled_ci)
-            self.assertIn("mise run crates-io:package:check", enabled_ci)
-            self.assertIn("github.event_name == 'pull_request'", enabled_ci)
+            assert ("crates-io:package:check") not in (disabled_ci)
+            assert ("mise run crates-io:package:check") in (enabled_ci)
+            assert ("github.event_name == 'pull_request'") in (enabled_ci)
 
-            self.assertFalse((disabled / "CRATES_IO_PUBLISHING.md").exists())
-            self.assertFalse((enabled / "CRATES_IO_PUBLISHING.md").exists())
+            assert not ((disabled / "CRATES_IO_PUBLISHING.md").exists())
+            assert not ((enabled / "CRATES_IO_PUBLISHING.md").exists())
 
             release = (enabled / ".github/workflows/release.yml").read_text()
             disabled_release = (disabled / ".github/workflows/release.yml").read_text()
-            self.assertNotIn("matrix.packages", release)
-            self.assertNotIn("  publish-crate:\n", disabled_release)
-            self.assertIn("  publish-crate:\n", release)
-            self.assertIn("needs: [version, build, release]", release)
-            self.assertNotIn("cargo metadata", release)
-            self.assertNotIn("https://crates.io/api/v1/crates/", release)
-            self.assertNotIn("cargo publish", release)
-            self.assertIn("continue-on-error: true", release)
-            self.assertIn("rust-lang/crates-io-auth-action@v1", release)
-            self.assertIn("run: mise run crates-io:publish", release)
-            self.assertLess(
-                release.index("  publish-crate:\n"),
-                release.index("  close-superseded-release-pr:\n"),
-            )
-            self.assertLess(
-                release.index("uses: rust-lang/crates-io-auth-action@v1"),
-                release.index("run: mise run crates-io:publish"),
-            )
+            assert ("matrix.packages") not in (release)
+            assert ("  publish-crate:\n") not in (disabled_release)
+            assert ("  publish-crate:\n") in (release)
+            assert ("needs: [version, build, release]") in (release)
+            assert ("cargo metadata") not in (release)
+            assert ("https://crates.io/api/v1/crates/") not in (release)
+            assert ("cargo publish") not in (release)
+            assert ("continue-on-error: true") in (release)
+            assert ("rust-lang/crates-io-auth-action@v1") in (release)
+            assert ("run: mise run crates-io:publish") in (release)
+            assert (release.index("  publish-crate:\n")) < (release.index("  close-superseded-release-pr:\n"))
+            assert (release.index("uses: rust-lang/crates-io-auth-action@v1")) < (release.index("run: mise run crates-io:publish"))
 
     def test_go_cli_container_image_publish_capability_renders_complete_variants(
         self,
@@ -1045,70 +953,45 @@ class TemplateRepositoryTest(unittest.TestCase):
 
             disabled_mise = (disabled / "mise.ci.toml").read_text()
             enabled_mise = (enabled / "mise.ci.toml").read_text()
-            self.assertNotIn("container:build", disabled_mise)
-            self.assertNotIn("container:publish", disabled_mise)
-            self.assertNotIn("aqua:ko-build/ko", disabled_mise)
-            self.assertIn('"aqua:ko-build/ko" = "0.19"', enabled_mise)
-            self.assertIn('[tasks."container:build"]', enabled_mise)
-            self.assertIn("ko build --local --tags dev", enabled_mise)
-            self.assertIn('CONTAINER_IMAGE_REPOSITORY:-ko.local', enabled_mise)
-            self.assertIn(
-                "CONTAINER_IMAGE_REPOSITORY must be a complete registry/repository name",
-                enabled_mise,
-            )
-            self.assertIn('CONTAINER_IMAGE_PLATFORM:-', enabled_mise)
-            self.assertIn('[tasks."container:publish"]', enabled_mise)
-            self.assertIn("--bare --platform=all", enabled_mise)
-            self.assertIn("tag_args+=(--tags latest)", enabled_mise)
-            self.assertIn(
-                "ghcr.io/YewFence/example-go-cli",
-                enabled_mise,
-            )
-            self.assertIn("./cmd/example-go-cli", enabled_mise)
-            self.assertNotIn("./cmd/your-cli", enabled_mise)
+            assert ("container:build") not in (disabled_mise)
+            assert ("container:publish") not in (disabled_mise)
+            assert ("aqua:ko-build/ko") not in (disabled_mise)
+            assert ('"aqua:ko-build/ko" = "0.19"') in (enabled_mise)
+            assert ('[tasks."container:build"]') in (enabled_mise)
+            assert ("ko build --local --tags dev") in (enabled_mise)
+            assert ('CONTAINER_IMAGE_REPOSITORY:-ko.local') in (enabled_mise)
+            assert ("CONTAINER_IMAGE_REPOSITORY must be a complete registry/repository name") in (enabled_mise)
+            assert ('CONTAINER_IMAGE_PLATFORM:-') in (enabled_mise)
+            assert ('[tasks."container:publish"]') in (enabled_mise)
+            assert ("--bare --platform=all") in (enabled_mise)
+            assert ("tag_args+=(--tags latest)") in (enabled_mise)
+            assert ("ghcr.io/YewFence/example-go-cli") in (enabled_mise)
+            assert ("./cmd/example-go-cli") in (enabled_mise)
+            assert ("./cmd/your-cli") not in (enabled_mise)
 
             disabled_release = (
                 disabled / ".github/workflows/release.yml"
             ).read_text()
             release = (enabled / ".github/workflows/release.yml").read_text()
-            self.assertNotIn("  publish-container:\n", disabled_release)
-            self.assertNotIn("packages: write", disabled_release)
-            self.assertNotIn("ko login ghcr.io", disabled_release)
-            self.assertIn("  publish-container:\n", release)
-            self.assertIn("needs: [version, release]", release)
-            self.assertIn("packages: write", release)
-            self.assertIn("ko login ghcr.io", release)
-            self.assertIn(
-                "CONTAINER_IMAGE_REPOSITORY: ghcr.io/YewFence/example-go-cli",
-                release,
-            )
-            self.assertIn(
-                "RELEASE_PRERELEASE: ${{ needs.version.outputs.prerelease }}",
-                release,
-            )
-            self.assertIn("run: mise run container:publish", release)
-            self.assertNotIn("ko build", release)
-            self.assertLess(
-                release.index("  release:\n"),
-                release.index("  publish-container:\n"),
-            )
-            self.assertLess(
-                release.index("ko login ghcr.io"),
-                release.index("run: mise run container:publish"),
-            )
+            assert ("  publish-container:\n") not in (disabled_release)
+            assert ("packages: write") not in (disabled_release)
+            assert ("ko login ghcr.io") not in (disabled_release)
+            assert ("  publish-container:\n") in (release)
+            assert ("needs: [version, release]") in (release)
+            assert ("packages: write") in (release)
+            assert ("ko login ghcr.io") in (release)
+            assert ("CONTAINER_IMAGE_REPOSITORY: ghcr.io/YewFence/example-go-cli") in (release)
+            assert ("RELEASE_PRERELEASE: ${{ needs.version.outputs.prerelease }}") in (release)
+            assert ("run: mise run container:publish") in (release)
+            assert ("ko build") not in (release)
+            assert (release.index("  release:\n")) < (release.index("  publish-container:\n"))
+            assert (release.index("ko login ghcr.io")) < (release.index("run: mise run container:publish"))
 
             disabled_readme = (disabled / "README.md").read_text()
             enabled_readme = (enabled / "README.md").read_text()
-            self.assertNotIn("## Container Image", disabled_readme)
-            self.assertIn("## Container Image", enabled_readme)
-            self.assertIn(
-                "ghcr.io/YewFence/example-go-cli:vMAJOR.MINOR.PATCH",
-                enabled_readme,
-            )
+            assert ("## Container Image") not in (disabled_readme)
+            assert ("## Container Image") in (enabled_readme)
+            assert ("ghcr.io/YewFence/example-go-cli:vMAJOR.MINOR.PATCH") in (enabled_readme)
 
             for output in ("Dockerfile", "ko.yaml", ".ko.yaml"):
-                self.assertFalse((enabled / output).exists())
-
-
-if __name__ == "__main__":
-    unittest.main()
+                assert not ((enabled / output).exists())

@@ -41,7 +41,7 @@ jobs:
         run: mise run docs:reference:check
 
       - name: Test template tool
-        run: uv run --project tools/template-tool python -m unittest discover -s tools/template-tool/tests -v
+        run: uv run --project tools/template-tool pytest tools/template-tool/tests -v
 
   common:
     name: Common Template

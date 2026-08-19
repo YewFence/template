@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import tempfile
-import unittest
 from pathlib import Path
+
+import pytest
 
 from template_tool.instantiation import (
     InstantiationError,
@@ -12,8 +13,8 @@ from template_tool.instantiation import (
 )
 
 
-class InstantiationTest(unittest.TestCase):
-    def setUp(self) -> None:
+class TestInstantiation:
+    def setup_method(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
         self.spec = InstantiationSpec(
@@ -24,7 +25,7 @@ class InstantiationTest(unittest.TestCase):
             export_metadata={"project_name": "Replace Me", "description": "Replace me", "binary_name": "replace-me"},
         )
 
-    def tearDown(self) -> None:
+    def teardown_method(self) -> None:
         self.temporary_directory.cleanup()
 
     def test_replaces_text_and_path_tokens(self) -> None:
@@ -35,29 +36,25 @@ class InstantiationTest(unittest.TestCase):
         )
         instantiate_tree(self.root, self.spec, {"project_name": "Example CLI", "description": 'Say "hello"', "binary_name": "example"})
         output = self.root / "cmd/example/main.go"
-        self.assertTrue(output.is_file())
-        self.assertIn('Example CLI', output.read_text(encoding="utf-8"))
-        self.assertIn('"Say \\"hello\\""', output.read_text(encoding="utf-8"))
+        assert output.is_file()
+        assert "Example CLI" in output.read_text(encoding="utf-8")
+        assert '"Say \\"hello\\""' in output.read_text(encoding="utf-8")
 
     def test_rejects_invalid_metadata_and_unknown_token(self) -> None:
-        with self.assertRaisesRegex(InstantiationError, "leading or trailing"):
+        with pytest.raises(InstantiationError, match="leading or trailing"):
             instantiate_tree(self.root, self.spec, {"project_name": " Example", "description": "ok", "binary_name": "example"})
         (self.root / "README.md").write_text("{{UNKNOWN_TOKEN}}\n", encoding="utf-8")
-        with self.assertRaisesRegex(InstantiationError, "unknown metadata token"):
+        with pytest.raises(InstantiationError, match="unknown metadata token"):
             instantiate_tree(self.root, self.spec, self.spec.validation_metadata)
 
     def test_rejects_path_collision(self) -> None:
         (self.root / "cmd/{{BINARY_NAME}}").mkdir(parents=True)
         (self.root / "cmd/example").mkdir(parents=True)
-        with self.assertRaisesRegex(InstantiationError, "target already exists"):
+        with pytest.raises(InstantiationError, match="target already exists"):
             instantiate_tree(self.root, self.spec, self.spec.validation_metadata)
 
     def test_rejects_invalid_github_identity_metadata(self) -> None:
-        with self.assertRaisesRegex(InstantiationError, "valid GitHub owner"):
+        with pytest.raises(InstantiationError, match="valid GitHub owner"):
             validate_metadata_value("github_owner", "YewFence/")
-        with self.assertRaisesRegex(InstantiationError, "valid GitHub repository"):
+        with pytest.raises(InstantiationError, match="valid GitHub repository"):
             validate_metadata_value("repo_name", "example/repository")
-
-
-if __name__ == "__main__":
-    unittest.main()

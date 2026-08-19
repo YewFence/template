@@ -1,20 +1,21 @@
 from __future__ import annotations
 
 import tempfile
-import unittest
 from pathlib import Path
+
+import pytest
 
 from template_tool import TemplateError, TemplateRepository
 
 
-class TemplateCapabilityTest(unittest.TestCase):
-    def setUp(self) -> None:
+class TestTemplateCapability:
+    def setup_method(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
         (self.root / "shared/static").mkdir(parents=True)
         (self.root / "overlays/example/static").mkdir(parents=True)
 
-    def tearDown(self) -> None:
+    def teardown_method(self) -> None:
         self.temporary_directory.cleanup()
 
     def write_config(
@@ -47,21 +48,18 @@ class TemplateCapabilityTest(unittest.TestCase):
         self.write_config()
         repository = TemplateRepository(self.root)
 
-        self.assertEqual(repository.resolve_capabilities("example"), ("docs-site",))
-        self.assertEqual(
-            repository.resolve_capabilities(
-                "example",
-                enable=("release", "release"),
-                disable=("docs-site", "docs-site"),
-            ),
-            ("release",),
-        )
+        assert repository.resolve_capabilities("example") == ("docs-site",)
+        assert repository.resolve_capabilities(
+            "example",
+            enable=("release", "release"),
+            disable=("docs-site", "docs-site"),
+        ) == ("release",)
 
     def test_resolver_rejects_conflicting_overrides(self) -> None:
         self.write_config()
         repository = TemplateRepository(self.root)
 
-        with self.assertRaisesRegex(TemplateError, "both enabled and disabled: release"):
+        with pytest.raises(TemplateError, match="both enabled and disabled: release"):
             repository.resolve_capabilities(
                 "example", enable=("release",), disable=("release",)
             )
@@ -70,29 +68,29 @@ class TemplateCapabilityTest(unittest.TestCase):
         self.write_config()
         repository = TemplateRepository(self.root)
 
-        with self.assertRaisesRegex(TemplateError, "not applicable.*unknown"):
+        with pytest.raises(TemplateError, match="not applicable.*unknown"):
             repository.resolve_capabilities("example", enable=("unknown",))
 
     def test_resolver_rejects_invalid_override_name(self) -> None:
         self.write_config()
         repository = TemplateRepository(self.root)
 
-        with self.assertRaisesRegex(TemplateError, "invalid capability name"):
+        with pytest.raises(TemplateError, match="invalid capability name"):
             repository.resolve_capabilities("example", enable=("Docs-Site",))
 
     def test_capability_contract_requires_supported_schema_version(self) -> None:
         self.write_config(version=1)
-        with self.assertRaisesRegex(TemplateError, "version = 2"):
+        with pytest.raises(TemplateError, match="version = 2"):
             TemplateRepository(self.root)
 
         self.write_config(version=3)
-        with self.assertRaisesRegex(TemplateError, "version = 2"):
+        with pytest.raises(TemplateError, match="version = 2"):
             TemplateRepository(self.root)
 
     def test_capability_contract_rejects_unknown_fields_before_profiles(self) -> None:
         self.write_config(top_level="unknown = true\n")
 
-        with self.assertRaisesRegex(TemplateError, "unknown top-level keys: unknown"):
+        with pytest.raises(TemplateError, match="unknown top-level keys: unknown"):
             TemplateRepository(self.root)
 
     def test_capability_contract_rejects_unknown_profile_fields(self) -> None:
@@ -100,8 +98,8 @@ class TemplateCapabilityTest(unittest.TestCase):
             capabilities='docs-site = "yes"\n', profile="unknown = true\n"
         )
 
-        with self.assertRaisesRegex(
-            TemplateError, "unknown keys in templates.example: unknown"
+        with pytest.raises(
+            TemplateError, match="unknown keys in templates.example: unknown"
         ):
             TemplateRepository(self.root)
 
@@ -112,24 +110,15 @@ class TemplateCapabilityTest(unittest.TestCase):
             "docs--site = true\n",
             'docs-site = "yes"\n',
         ):
-            with self.subTest(declaration=declaration):
-                self.write_config(capabilities=declaration)
-                with self.assertRaisesRegex(TemplateError, "capabilit"):
-                    TemplateRepository(self.root)
+            self.write_config(capabilities=declaration)
+            with pytest.raises(TemplateError, match="capabilit"):
+                TemplateRepository(self.root)
 
     def test_capabilities_are_sorted_and_do_not_create_identity_tokens(self) -> None:
         self.write_config(capabilities="zeta = true\nalpha = false\n")
         repository = TemplateRepository(self.root)
 
-        self.assertEqual(
-            repository.capabilities("example"),
-            (("alpha", False), ("zeta", True)),
-        )
-        self.assertEqual(
-            repository.instantiation_spec("example").tokens,
-            {"PROJECT_NAME": "project_name"},
-        )
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert repository.capabilities("example") == (("alpha", False), ("zeta", True))
+        assert repository.instantiation_spec("example").tokens == {
+            "PROJECT_NAME": "project_name"
+        }

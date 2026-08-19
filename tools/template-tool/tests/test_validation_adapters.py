@@ -5,68 +5,65 @@ import os
 import subprocess
 import tempfile
 import tomllib
-import unittest
 from pathlib import Path
+
+import pytest
 
 
 REPOSITORY_ROOT = Path(__file__).parents[3]
 
 
-class ValidationAdapterTest(unittest.TestCase):
-    def test_docs_site_disabled_skips_documentation_toolchain(self) -> None:
-        for profile in ("common", "go-cli", "rust"):
-            with self.subTest(profile=profile):
-                calls = self.run_adapter(profile, ())
+class TestValidationAdapter:
+    @pytest.mark.parametrize("profile", ("common", "go-cli", "rust"))
+    def test_docs_site_disabled_skips_documentation_toolchain(self, profile: str) -> None:
+        calls = self.run_adapter(profile, ())
 
-                self.assertNotIn("run docs:lock", calls)
-                self.assertNotIn("run docs:build", calls)
+        assert "run docs:lock" not in calls
+        assert "run docs:build" not in calls
 
-    def test_docs_site_enabled_locks_and_builds_documentation(self) -> None:
-        for profile in ("common", "go-cli", "rust"):
-            with self.subTest(profile=profile):
-                calls = self.run_adapter(profile, ("docs-site",))
+    @pytest.mark.parametrize("profile", ("common", "go-cli", "rust"))
+    def test_docs_site_enabled_locks_and_builds_documentation(self, profile: str) -> None:
+        calls = self.run_adapter(profile, ("docs-site",))
 
-                self.assertIn("run docs:lock", calls)
-                self.assertIn("run docs:build", calls)
+        assert "run docs:lock" in calls
+        assert "run docs:build" in calls
 
     def test_crates_io_publish_enabled_checks_package(self) -> None:
         calls = self.run_adapter("rust", ("crates-io-publish",))
 
-        self.assertIn("run crates-io:package:check", calls)
+        assert "run crates-io:package:check" in calls
 
     def test_crates_io_publish_disabled_skips_package_check(self) -> None:
         calls = self.run_adapter("rust", ())
 
-        self.assertNotIn("run crates-io:package:check", calls)
+        assert "run crates-io:package:check" not in calls
 
     def test_container_image_publish_enabled_builds_local_image(self) -> None:
         calls = self.run_adapter("go-cli", ("container-image-publish",))
 
-        self.assertIn("run container:build", calls)
+        assert "run container:build" in calls
 
     def test_container_image_publish_disabled_skips_local_image(self) -> None:
         calls = self.run_adapter("go-cli", ())
 
-        self.assertNotIn("run container:build", calls)
+        assert "run container:build" not in calls
 
-    def test_codecov_upload_enabled_validates_both_workflows(self) -> None:
-        for profile in ("common", "go-cli", "rust"):
-            with self.subTest(profile=profile):
-                calls = self.run_adapter(profile, ("codecov-upload",))
-                self.assertIn("run actions:update", calls)
+    @pytest.mark.parametrize("profile", ("common", "go-cli", "rust"))
+    def test_codecov_upload_enabled_validates_both_workflows(self, profile: str) -> None:
+        calls = self.run_adapter(profile, ("codecov-upload",))
+        assert "run actions:update" in calls
 
-    def test_codecov_upload_disabled_skips_coverage_validation(self) -> None:
-        for profile in ("common", "go-cli", "rust"):
-            with self.subTest(profile=profile):
-                calls = self.run_adapter(profile, ())
-                self.assertNotIn("run coverage", calls)
+    @pytest.mark.parametrize("profile", ("common", "go-cli", "rust"))
+    def test_codecov_upload_disabled_skips_coverage_validation(self, profile: str) -> None:
+        calls = self.run_adapter(profile, ())
+        assert "run coverage" not in calls
 
     def test_explicit_docs_site_state_rejects_mismatched_staged_project(self) -> None:
-        with self.assertRaises(subprocess.CalledProcessError):
+        with pytest.raises(subprocess.CalledProcessError):
             self.run_adapter("common", ("docs-site",), staged_capabilities=())
 
     def test_explicit_crates_io_state_rejects_mismatched_staged_project(self) -> None:
-        with self.assertRaises(subprocess.CalledProcessError):
+        with pytest.raises(subprocess.CalledProcessError):
             self.run_adapter(
                 "rust",
                 ("crates-io-publish",),
@@ -76,7 +73,7 @@ class ValidationAdapterTest(unittest.TestCase):
     def test_explicit_container_image_state_rejects_mismatched_staged_project(
         self,
     ) -> None:
-        with self.assertRaises(subprocess.CalledProcessError):
+        with pytest.raises(subprocess.CalledProcessError):
             self.run_adapter(
                 "go-cli",
                 ("container-image-publish",),
@@ -371,7 +368,3 @@ class ValidationAdapterTest(unittest.TestCase):
             "MISE_CALLS_PATH": str(calls_path),
             "MISE_TASKS": "\n".join(sorted(tasks)),
         }
-
-
-if __name__ == "__main__":
-    unittest.main()
