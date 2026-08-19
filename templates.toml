@@ -43,6 +43,7 @@ hints = [
  repo_name = "replace-me-repository"
  [templates.common.slots."mise.ci.toml"]
  audit_tasks = ["shared:mise/ci/common-audit.toml.j2"]
+ coverage_tools = { capability = "codecov-upload", fragments = ["shared:mise/ci/codecov-tools.toml.j2"] }
  release_package = ["shared:mise/ci/common-package.toml.j2"]
  [templates.common.slots."mise.toml"]
  docs_tools = { capability = "docs-site", fragments = ["shared:mise/docs-tools.toml.j2"] }
@@ -58,9 +59,12 @@ hints = [
  coverage_ignored_paths = { capability = "codecov-upload", fragments = ["overlay:gitignore/coverage.j2"] }
  [templates.common.slots.".github/workflows/ci.yml"]
  docs_job = { capability = "docs-site", fragments = ["shared:workflows/docs/docs-job.yml.j2"] }
- coverage_job = { capability = "codecov-upload", fragments = ["overlay:workflows/ci/coverage-job.yml.j2"] }
+ coverage_job = { capability = "codecov-upload", fragments = ["shared:workflows/coverage/pr-prefix.yml.j2", "overlay:workflows/ci/coverage-job.yml.j2", "shared:workflows/coverage/pr-suffix.yml.j2"] }
  [templates.common.capability_outputs]
  docs-site = ["docs/", ".github/workflows/docs.yml"]
+ codecov-upload = [".github/workflows/coverage.yml"]
+ [templates.common.slots.".github/workflows/coverage.yml"]
+ coverage_job = { capability = "codecov-upload", fragments = ["shared:workflows/coverage/default-prefix.yml.j2", "overlay:workflows/ci/coverage-job.yml.j2", "shared:workflows/coverage/default-suffix.yml.j2"] }
  [templates.common.slots.".github/workflows/audit.yml"]
  audit_paths = ["shared:workflows/audit/common-paths.yml.j2"]
  [templates.common.slots.".github/workflows/prepare-release.yml"]
@@ -105,6 +109,7 @@ hints = [
  binary_name = "replace-me-binary"
  [templates.go-cli.slots."mise.ci.toml"]
  maintenance_tools = ["overlay:mise/ci/maintenance.toml.j2"]
+ coverage_tools = { capability = "codecov-upload", fragments = ["shared:mise/ci/codecov-tools.toml.j2"] }
  container_image_tools = { capability = "container-image-publish", fragments = ["overlay:mise/ci/container-image-tools.toml.j2"] }
  audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
  container_image_tasks = { capability = "container-image-publish", fragments = ["overlay:mise/ci/container-image-tasks.toml.j2"] }
@@ -125,7 +130,9 @@ hints = [
  [templates.go-cli.slots.".github/workflows/ci.yml"]
  docs_job = { capability = "docs-site", fragments = ["shared:workflows/docs/docs-job.yml.j2"] }
  project_cache = ["overlay:workflows/ci/project-cache.yml.j2"]
- coverage_job = { capability = "codecov-upload", fragments = ["overlay:workflows/ci/coverage-job.yml.j2"] }
+ coverage_job = { capability = "codecov-upload", fragments = ["shared:workflows/coverage/pr-prefix.yml.j2", "overlay:workflows/ci/coverage-job.yml.j2", "shared:workflows/coverage/pr-suffix.yml.j2"] }
+ [templates.go-cli.slots.".github/workflows/coverage.yml"]
+ coverage_job = { capability = "codecov-upload", fragments = ["shared:workflows/coverage/default-prefix.yml.j2", "overlay:workflows/ci/coverage-job.yml.j2", "shared:workflows/coverage/default-suffix.yml.j2"] }
  [templates.go-cli.slots.".github/workflows/audit.yml"]
  audit_cache = ["overlay:workflows/audit/cache.yml.j2"]
  audit_paths = ["overlay:workflows/audit/paths.yml.j2"]
@@ -141,6 +148,7 @@ hints = [
  publish_container_job = { capability = "container-image-publish", fragments = ["overlay:workflows/release/publish-container-job.yml.j2"] }
  [templates.go-cli.capability_outputs]
  docs-site = ["docs/", ".github/workflows/docs.yml"]
+ codecov-upload = [".github/workflows/coverage.yml"]
  [templates.go-cli.paths]
  "docs/.vitepress/config.ts" = "overlay"
  "docs/index.md" = "overlay"
@@ -188,7 +196,7 @@ hints = [
  binary_name = "replace-me-binary"
  [templates.rust.slots."mise.ci.toml"]
  maintenance_tools = ["overlay:mise/ci/maintenance.toml.j2"]
- coverage_tools = { capability = "codecov-upload", fragments = ["overlay:mise/ci/coverage-tools.toml.j2"] }
+ coverage_tools = { capability = "codecov-upload", fragments = ["shared:mise/ci/codecov-tools.toml.j2", "overlay:mise/ci/coverage-tools.toml.j2"] }
  crates_io_publish_tools = { capability = "crates-io-publish", fragments = ["overlay:mise/ci/crates-io-publish-tools.toml.j2"] }
  audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
  release_version_tasks = ["overlay:mise/ci/release-version.toml.j2"]
@@ -210,13 +218,16 @@ hints = [
  [templates.rust.capability_outputs]
  docs-site = ["docs/", ".github/workflows/docs.yml"]
  crates-io-publish = ["scripts/publish-crate"]
+ codecov-upload = [".github/workflows/coverage.yml"]
  [templates.rust.slots."Cargo.toml"]
  package_publish = { capability = "crates-io-publish", default_fragments = ["overlay:cargo/publish-disabled.toml.j2"], fragments = ["overlay:cargo/publish-crates-io.toml.j2"] }
  [templates.rust.slots.".github/workflows/ci.yml"]
  docs_job = { capability = "docs-site", fragments = ["shared:workflows/docs/docs-job.yml.j2"] }
  project_cache = ["overlay:workflows/ci/project-cache.yml.j2"]
  crates_io_package_check = { capability = "crates-io-publish", fragments = ["overlay:workflows/ci/crates-io-package-check.yml.j2"] }
- coverage_job = { capability = "codecov-upload", fragments = ["overlay:workflows/ci/coverage-job.yml.j2"] }
+ coverage_job = { capability = "codecov-upload", fragments = ["shared:workflows/coverage/pr-prefix.yml.j2", "overlay:workflows/ci/coverage-job.yml.j2", "shared:workflows/coverage/pr-suffix.yml.j2"] }
+ [templates.rust.slots.".github/workflows/coverage.yml"]
+ coverage_job = { capability = "codecov-upload", fragments = ["shared:workflows/coverage/default-prefix.yml.j2", "overlay:workflows/ci/coverage-job.yml.j2", "shared:workflows/coverage/default-suffix.yml.j2"] }
  [templates.rust.slots.".github/workflows/audit.yml"]
  audit_cache = ["overlay:workflows/audit/cache.yml.j2"]
  audit_paths = ["overlay:workflows/audit/paths.yml.j2"]

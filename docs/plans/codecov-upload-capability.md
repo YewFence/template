@@ -2,7 +2,7 @@
 
 ## 状态
 
-设计完成，待实现和验证。本文描述 `common`、`go-cli` 和 `rust` 三个 template profile 的 `codecov-upload` template capability；实现完成后由 GitHub Actions 执行完整 staging validation，本地不要求运行完整 `mise run check`。
+实现完成，待 GitHub Actions staging validation 和首次真实 public repository 的 live Codecov 验收。本文描述 `common`、`go-cli` 和 `rust` 三个 template profile 的 `codecov-upload` template capability；本地已完成 renderer、validation adapter、单元测试、导出 workflow 静态检查和同步检查，不要求运行完整 `mise run check`。
 
 ## 背景
 

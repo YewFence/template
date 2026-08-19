@@ -1,0 +1,21 @@
+    - name: Resolve Codecov CLI
+      id: codecov-cli
+      run: echo "path=$(mise which codecovcli)" >> "$GITHUB_OUTPUT"
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v7
+      with:
+        binary: ${{ steps.codecov-cli.outputs.path }}
+        files: ${{ steps.coverage.outputs.report }}
+        disable_search: true
+        fail_ci_if_error: true
+        use_oidc: true
+
+    - name: Summarize coverage failure
+      if: ${{ failure() }}
+      run: |
+        {
+          echo "## Coverage upload failed"
+          echo
+          echo "Coverage report generation or Codecov upload failed. Inspect the preceding step logs."
+        } >> "${GITHUB_STEP_SUMMARY}"

@@ -9,18 +9,42 @@ case "${enabled_capabilities}" in
   '[]')
     docs_site_enabled=false
     container_image_publish_enabled=false
+    codecov_upload_enabled=false
     ;;
   '["docs-site"]')
     docs_site_enabled=true
     container_image_publish_enabled=false
+    codecov_upload_enabled=false
     ;;
   '["container-image-publish"]')
     docs_site_enabled=false
     container_image_publish_enabled=true
+    codecov_upload_enabled=false
     ;;
   '["container-image-publish","docs-site"]')
     docs_site_enabled=true
     container_image_publish_enabled=true
+    codecov_upload_enabled=false
+    ;;
+  '["codecov-upload"]')
+    docs_site_enabled=false
+    container_image_publish_enabled=false
+    codecov_upload_enabled=true
+    ;;
+  '["codecov-upload","docs-site"]')
+    docs_site_enabled=true
+    container_image_publish_enabled=false
+    codecov_upload_enabled=true
+    ;;
+  '["codecov-upload","container-image-publish"]')
+    docs_site_enabled=false
+    container_image_publish_enabled=true
+    codecov_upload_enabled=true
+    ;;
+  '["codecov-upload","container-image-publish","docs-site"]')
+    docs_site_enabled=true
+    container_image_publish_enabled=true
+    codecov_upload_enabled=true
     ;;
   *)
     echo "unexpected Go CLI capability set: ${enabled_capabilities}" >&2
@@ -76,6 +100,76 @@ else
   if grep -Eq '^  docs:$' "${template_root}/.github/workflows/ci.yml" ||
      grep -Fq 'run: mise run docs:build' "${template_root}/.github/workflows/ci.yml"; then
     echo "docs-site disabled but CI docs job remains" >&2
+    exit 1
+  fi
+fi
+
+coverage_report="coverage.out"
+coverage_workflow="${template_root}/.github/workflows/ci.yml"
+default_coverage_workflow="${template_root}/.github/workflows/coverage.yml"
+if ${codecov_upload_enabled}; then
+  if ! printf '%s\n' "${task_names}" | grep -Fxq coverage; then
+    echo "codecov-upload enabled but mise coverage task is missing" >&2
+    exit 1
+  fi
+  coverage_job="$(sed -n '/^  coverage:$/,/^  [[:alnum:]_-]\+:$/p' "${coverage_workflow}")"
+  for required in \
+    'run: mise run coverage' \
+    'contents: read' \
+    'uses: codecov/codecov-action@v7' \
+    'binary: ${{ steps.codecov-cli.outputs.path }}' \
+    'files: ${{ steps.coverage.outputs.report }}' \
+    'disable_search: true' \
+    'fail_ci_if_error: true' \
+    'github.event_name ==' \
+    'id: codecov-cli'; do
+    if ! printf '%s\n' "${coverage_job}" | grep -Fq "${required}"; then
+      echo "codecov-upload enabled but PR coverage job is missing: ${required}" >&2
+      exit 1
+    fi
+  done
+  if printf '%s\n' "${coverage_job}" | grep -Eq 'id-token: write|CODECOV_TOKEN|pull_request_target|override_branch|override_pr|skip_validation|use_oidc'; then
+    echo "codecov-upload PR coverage job has unsafe or privileged behavior" >&2
+    exit 1
+  fi
+  if ! grep -Fq '"pipx:codecov-cli" = "11"' "${template_root}/mise.ci.toml" ||
+     grep -Fq 'pipx:codecov-cli' "${template_root}/mise.toml"; then
+    echo "codecov-upload CLI tool ownership is incorrect" >&2
+    exit 1
+  fi
+  if [[ ! -f "${default_coverage_workflow}" ]]; then
+    echo "codecov-upload default branch workflow is missing" >&2
+    exit 1
+  fi
+  for required in \
+    'github.event_name ==' \
+    'refs/heads/main' \
+    'id-token: write' \
+    'use_oidc: true' \
+    'binary: ${{ steps.codecov-cli.outputs.path }}' \
+    'files: ${{ steps.coverage.outputs.report }}' \
+    'group: coverage-${{ github.ref }}' \
+    'cancel-in-progress: true'; do
+    if ! grep -Fq "${required}" "${default_coverage_workflow}"; then
+      echo "codecov-upload default branch workflow is missing: ${required}" >&2
+      exit 1
+    fi
+  done
+  if grep -Eq 'pull_request|CODECOV_TOKEN|pull_request_target|override_branch|override_pr|skip_validation' "${default_coverage_workflow}"; then
+    echo "codecov-upload default branch workflow has unsafe or PR-only behavior" >&2
+    exit 1
+  fi
+  if ! grep -Fxq "/${coverage_report}" "${template_root}/.gitignore"; then
+    echo "codecov-upload coverage report is not ignored" >&2
+    exit 1
+  fi
+else
+  if printf '%s\n' "${task_names}" | grep -Fxq coverage ||
+     grep -Eq 'codecov|mise run coverage' "${coverage_workflow}" ||
+     [[ -e "${default_coverage_workflow}" ]] ||
+     grep -Fq 'pipx:codecov-cli' "${template_root}/mise.ci.toml" ||
+     grep -Fxq "/${coverage_report}" "${template_root}/.gitignore"; then
+    echo "codecov-upload disabled but coverage behavior remains" >&2
     exit 1
   fi
 fi

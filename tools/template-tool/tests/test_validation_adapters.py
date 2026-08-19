@@ -49,6 +49,18 @@ class ValidationAdapterTest(unittest.TestCase):
 
         self.assertNotIn("run container:build", calls)
 
+    def test_codecov_upload_enabled_validates_both_workflows(self) -> None:
+        for profile in ("common", "go-cli", "rust"):
+            with self.subTest(profile=profile):
+                calls = self.run_adapter(profile, ("codecov-upload",))
+                self.assertIn("run actions:update", calls)
+
+    def test_codecov_upload_disabled_skips_coverage_validation(self) -> None:
+        for profile in ("common", "go-cli", "rust"):
+            with self.subTest(profile=profile):
+                calls = self.run_adapter(profile, ())
+                self.assertNotIn("run coverage", calls)
+
     def test_explicit_docs_site_state_rejects_mismatched_staged_project(self) -> None:
         with self.assertRaises(subprocess.CalledProcessError):
             self.run_adapter("common", ("docs-site",), staged_capabilities=())
@@ -131,8 +143,31 @@ class ValidationAdapterTest(unittest.TestCase):
         docs_enabled = "docs-site" in enabled_capabilities
         crates_io_enabled = "crates-io-publish" in enabled_capabilities
         container_image_enabled = "container-image-publish" in enabled_capabilities
+        codecov_enabled = "codecov-upload" in enabled_capabilities
         (template_root / ".github/workflows").mkdir(parents=True)
         ci_lines = ["jobs:", "  check:"]
+        if codecov_enabled:
+            ci_lines.extend(
+                (
+                    "  coverage:",
+                    "    if: ${{ github.event_name == 'pull_request' }}",
+                    "    permissions:",
+                    "      contents: read",
+                    "    steps:",
+                    "      - name: Generate coverage report",
+                    "        run: mise run coverage",
+                    "        id: coverage",
+                    "      - name: Resolve Codecov CLI",
+                    "        id: codecov-cli",
+                    "      - uses: codecov/codecov-action@v7",
+                    "        binary: ${{ steps.codecov-cli.outputs.path }}",
+                    "        files: ${{ steps.coverage.outputs.report }}",
+                    "        disable_search: true",
+                    "        fail_ci_if_error: true",
+                    "      - name: Summary",
+                    "        run: echo GITHUB_STEP_SUMMARY",
+                )
+            )
         if docs_enabled:
             ci_lines.extend(
                 ("  docs:", "    name: Docs", "      run: mise run docs:build")
@@ -152,6 +187,40 @@ class ValidationAdapterTest(unittest.TestCase):
         (template_root / ".github/workflows/ci.yml").write_text(
             "\n".join(ci_lines) + "\n", encoding="utf-8"
         )
+        if codecov_enabled:
+            (template_root / ".github/workflows/coverage.yml").write_text(
+                "\n".join(
+                    (
+                        "on:",
+                        "  push:",
+                        "    branches: [main]",
+                        "  workflow_dispatch:",
+                        "concurrency:",
+                        "  group: coverage-${{ github.ref }}",
+                        "  cancel-in-progress: true",
+                        "jobs:",
+                        "  coverage:",
+                        "    if: ${{ github.event_name == 'push' || github.ref == 'refs/heads/main' }}",
+                        "    permissions:",
+                        "      contents: read",
+                        "      id-token: write",
+                        "    steps:",
+                        "      - name: Generate coverage report",
+                        "        run: mise run coverage",
+                        "        id: coverage",
+                        "      - name: Resolve Codecov CLI",
+                        "        id: codecov-cli",
+                        "      - uses: codecov/codecov-action@v7",
+                        "        binary: ${{ steps.codecov-cli.outputs.path }}",
+                        "        files: ${{ steps.coverage.outputs.report }}",
+                        "        disable_search: true",
+                        "        fail_ci_if_error: true",
+                        "        use_oidc: true",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
         release_lines = ["jobs:", "  release:"]
         if profile == "rust" and crates_io_enabled:
             release_lines.extend(
@@ -191,7 +260,26 @@ class ValidationAdapterTest(unittest.TestCase):
         (template_root / "mise.toml").write_text(
             "\n".join(tool_lines) + "\n", encoding="utf-8"
         )
+        if codecov_enabled:
+            with (template_root / "mise.toml").open("a", encoding="utf-8") as handle:
+                if profile == "common":
+                    handle.write(
+                        "\n[tasks.coverage]\n"
+                        'description = "[PLACEHOLDER] Generate coverage.xml for Codecov upload"\n'
+                        "run = 'echo \"[PLACEHOLDER] Replace coverage with a command that "
+                        "generates coverage.xml in the repository root\" >&2; exit 1'\n"
+                    )
+                else:
+                    handle.write(
+                        "\n[tasks.coverage]\n"
+                        "description = \"Generate coverage report\"\n"
+                        "run = \"echo coverage\"\n"
+                    )
         ci_tool_lines = ["[tools]", 'git-cliff = "latest"']
+        if codecov_enabled:
+            ci_tool_lines.append('"pipx:codecov-cli" = "11"')
+            if profile == "rust":
+                ci_tool_lines.append('"cargo:cargo-llvm-cov" = "0.8"')
         if profile == "rust" and crates_io_enabled:
             ci_tool_lines.append('jq = "1"')
         if profile == "go-cli" and container_image_enabled:
@@ -207,6 +295,9 @@ class ValidationAdapterTest(unittest.TestCase):
         (template_root / "mise.ci.toml").write_text(
             "\n".join(ci_tool_lines) + "\n", encoding="utf-8"
         )
+        if codecov_enabled:
+            report = {"common": "coverage.xml", "go-cli": "coverage.out", "rust": "lcov.info"}[profile]
+            (template_root / ".gitignore").write_text(f"/{report}\n", encoding="utf-8")
         (template_root / "tracked").write_text("tracked\n", encoding="utf-8")
 
     def initialize_repository(self, template_root: Path) -> None:
@@ -239,6 +330,8 @@ class ValidationAdapterTest(unittest.TestCase):
         enabled_capabilities: tuple[str, ...],
     ) -> dict[str, str]:
         tasks = ["actions:update", "check", "deps:update"]
+        if "codecov-upload" in enabled_capabilities:
+            tasks.append("coverage")
         if "docs-site" in enabled_capabilities:
             tasks.extend(
                 (

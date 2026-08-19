@@ -81,6 +81,7 @@ fi
 
 coverage_report="coverage.xml"
 coverage_workflow="${template_root}/.github/workflows/ci.yml"
+default_coverage_workflow="${template_root}/.github/workflows/coverage.yml"
 if ${codecov_upload_enabled}; then
   if ! printf '%s\n' "${task_names}" | grep -Fxq coverage; then
     echo "codecov-upload enabled but mise coverage task is missing" >&2
@@ -96,21 +97,49 @@ if ${codecov_upload_enabled}; then
   for required in \
     'run: mise run coverage' \
     'contents: read' \
-    'id-token: write' \
     'uses: codecov/codecov-action@v7' \
-    'files: coverage.xml' \
+    'binary: ${{ steps.codecov-cli.outputs.path }}' \
+    'files: ${{ steps.coverage.outputs.report }}' \
     'disable_search: true' \
     'fail_ci_if_error: true' \
-    'use_oidc: true' \
+    'github.event_name ==' \
+    'id: codecov-cli' \
     'GITHUB_STEP_SUMMARY'; do
     if ! printf '%s\n' "${coverage_job}" | grep -Fq "${required}"; then
       echo "codecov-upload enabled but coverage job is missing: ${required}" >&2
       exit 1
     fi
   done
-  if printf '%s\n' "${coverage_job}" | grep -Eq 'contents: write|packages: write|pull-requests: write' ||
-     grep -Eq 'CODECOV_TOKEN|pull_request_target' "${coverage_workflow}"; then
+  if printf '%s\n' "${coverage_job}" | grep -Eq 'id-token: write|contents: write|packages: write|pull-requests: write|CODECOV_TOKEN|pull_request_target|use_oidc|override_branch|override_pr|skip_validation'; then
     echo "codecov-upload coverage job requests unsafe permissions or authentication" >&2
+    exit 1
+  fi
+  if ! grep -Fq '"pipx:codecov-cli" = "11"' "${template_root}/mise.ci.toml" ||
+     grep -Fq 'pipx:codecov-cli' "${template_root}/mise.toml"; then
+    echo "codecov-upload common CLI tool ownership is incorrect" >&2
+    exit 1
+  fi
+  if [[ ! -f "${default_coverage_workflow}" ]]; then
+    echo "codecov-upload default branch workflow is missing" >&2
+    exit 1
+  fi
+  default_job="$(sed -n '/^  coverage:$/,$p' "${default_coverage_workflow}")"
+  for required in \
+    'github.event_name == '\
+    'refs/heads/main' \
+    'id-token: write' \
+    'use_oidc: true' \
+    'binary: ${{ steps.codecov-cli.outputs.path }}' \
+    'files: ${{ steps.coverage.outputs.report }}' \
+    'group: coverage-${{ github.ref }}' \
+    'cancel-in-progress: true'; do
+    if ! grep -Fq "${required}" "${default_coverage_workflow}"; then
+      echo "codecov-upload default branch workflow is missing: ${required}" >&2
+      exit 1
+    fi
+  done
+  if grep -Eq 'pull_request|CODECOV_TOKEN|pull_request_target|override_branch|override_pr|skip_validation' "${default_coverage_workflow}"; then
+    echo "codecov-upload default branch workflow has unsafe or PR-only behavior" >&2
     exit 1
   fi
   if ! grep -Fxq "/${coverage_report}" "${template_root}/.gitignore"; then
@@ -124,6 +153,8 @@ if ${codecov_upload_enabled}; then
 else
   if printf '%s\n' "${task_names}" | grep -Fxq coverage ||
      grep -Eq 'codecov|id-token: write|mise run coverage' "${coverage_workflow}" ||
+     [[ -e "${default_coverage_workflow}" ]] ||
+     grep -Fq 'pipx:codecov-cli' "${template_root}/mise.ci.toml" ||
      grep -Fxq "/${coverage_report}" "${template_root}/.gitignore"; then
     echo "codecov-upload disabled but coverage behavior remains" >&2
     exit 1

@@ -793,6 +793,89 @@ class TemplateRepositoryTest(unittest.TestCase):
                         )
                     )
 
+    def test_codecov_upload_capability_renders_complete_profile_variants(self) -> None:
+        repository_root = Path(__file__).resolve().parents[3]
+        repository = TemplateRepository(repository_root)
+        reports = {
+            "common": "coverage.xml",
+            "go-cli": "coverage.out",
+            "rust": "lcov.info",
+        }
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output_root = Path(temporary)
+            for template, report in reports.items():
+                with self.subTest(template=template):
+                    disabled = output_root / template / "disabled"
+                    enabled = output_root / template / "enabled"
+                    repository.render_to(template, disabled, enabled_capabilities=())
+                    repository.render_to(
+                        template,
+                        enabled,
+                        enabled_capabilities=("codecov-upload",),
+                    )
+
+                    disabled_ci = (disabled / ".github/workflows/ci.yml").read_text()
+                    disabled_mise = (disabled / "mise.toml").read_text()
+                    disabled_ci_mise = (disabled / "mise.ci.toml").read_text()
+                    self.assertNotIn("  coverage:\n", disabled_ci)
+                    self.assertNotIn("[tasks.coverage]", disabled_mise)
+                    self.assertNotIn("codecov-cli", disabled_ci_mise)
+                    self.assertNotIn(f"/{report}", (disabled / ".gitignore").read_text())
+                    self.assertFalse(
+                        (disabled / ".github/workflows/coverage.yml").exists()
+                    )
+
+                    enabled_ci = (enabled / ".github/workflows/ci.yml").read_text()
+                    coverage = (
+                        enabled / ".github/workflows/coverage.yml"
+                    ).read_text()
+                    enabled_mise = (enabled / "mise.toml").read_text()
+                    enabled_ci_mise = (enabled / "mise.ci.toml").read_text()
+                    self.assertIn("  coverage:\n", enabled_ci)
+                    self.assertIn(
+                        "if: ${{ github.event_name == 'pull_request' }}", enabled_ci
+                    )
+                    self.assertIn("    contents: read\n", enabled_ci)
+                    self.assertNotIn("id-token: write", enabled_ci)
+                    self.assertNotIn("use_oidc:", enabled_ci)
+                    self.assertIn("push:\n    branches: [main]", coverage)
+                    self.assertIn("workflow_dispatch:", coverage)
+                    self.assertIn(
+                        "github.event_name == 'push' || github.ref == 'refs/heads/main'",
+                        coverage,
+                    )
+                    self.assertIn("id-token: write", coverage)
+                    self.assertIn("group: coverage-${{ github.ref }}", coverage)
+                    self.assertIn("cancel-in-progress: true", coverage)
+                    self.assertIn("use_oidc: true", coverage)
+
+                    for workflow in (enabled_ci, coverage):
+                        self.assertIn("uses: codecov/codecov-action@v7", workflow)
+                        self.assertIn(
+                            "binary: ${{ steps.codecov-cli.outputs.path }}", workflow
+                        )
+                        self.assertIn(
+                            "files: ${{ steps.coverage.outputs.report }}", workflow
+                        )
+                        self.assertIn("disable_search: true", workflow)
+                        self.assertIn("fail_ci_if_error: true", workflow)
+                        self.assertIn("mise which codecovcli", workflow)
+                        self.assertNotIn("CODECOV_TOKEN", workflow)
+                        self.assertNotIn("override_branch", workflow)
+                        self.assertNotIn("override_pr", workflow)
+                        self.assertNotIn("skip_validation", workflow)
+
+                    self.assertIn("[tasks.coverage]", enabled_mise)
+                    self.assertIn(f"/{report}", (enabled / ".gitignore").read_text())
+                    self.assertIn('"pipx:codecov-cli" = "11"', enabled_ci_mise)
+                    if template == "rust":
+                        self.assertIn(
+                            '"cargo:cargo-llvm-cov" = "0.8"', enabled_ci_mise
+                        )
+                    else:
+                        self.assertNotIn("cargo-llvm-cov", enabled_ci_mise)
+
     def test_export_metadata_instantiates_every_profile_and_derived_value(self) -> None:
         repository_root = Path(__file__).resolve().parents[3]
         repository = TemplateRepository(repository_root)
