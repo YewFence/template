@@ -1,10 +1,9 @@
-/docs/node_modules/
-/docs/.vitepress/cache/
-/docs/.vitepress/dist/
-
 /target/
 /dist/
 /coverage/
+/docs/node_modules/
+/docs/.vitepress/cache/
+/docs/.vitepress/dist/
 
 .codex
 .claude

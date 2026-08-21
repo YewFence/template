@@ -53,6 +53,8 @@ hints = [
  docs_badge = { capability = "docs-site", fragments = ["shared:docs/README.md.j2"] }
  docs_section = { capability = "docs-site", fragments = ["shared:docs/README-section.md.j2"] }
  [templates.common.slots."CONTRIBUTING.md"]
+ project_principles = ["overlay:contributing/project-principles.md.j2"]
+ audit_command = ["overlay:contributing/audit-command.md.j2"]
  docs_section = { capability = "docs-site", fragments = ["shared:docs/CONTRIBUTING-section.md.j2"] }
  [templates.common.slots.".gitignore"]
  docs_ignored_paths = { capability = "docs-site", fragments = ["shared:docs-ignored-paths.j2"] }
@@ -125,6 +127,7 @@ hints = [
  [templates.go-cli.slots."CONTRIBUTING.md"]
  docs_section = { capability = "docs-site", fragments = ["overlay:docs/CONTRIBUTING-section.md.j2"] }
  [templates.go-cli.slots.".gitignore"]
+ project_ignored_paths = ["overlay:gitignore/project-ignored-paths.j2"]
  docs_ignored_paths = { capability = "docs-site", fragments = ["shared:docs-ignored-paths.j2"] }
  coverage_ignored_paths = { capability = "codecov-upload", fragments = ["overlay:gitignore/coverage.j2"] }
  [templates.go-cli.slots.".github/workflows/ci.yml"]
@@ -150,6 +153,7 @@ hints = [
  docs-site = ["docs/", ".github/workflows/docs.yml"]
  codecov-upload = [".github/workflows/coverage.yml"]
  [templates.go-cli.paths]
+ "CONTRIBUTING.md" = "overlay"
  "docs/.vitepress/config.ts" = "overlay"
  "docs/index.md" = "overlay"
  "docs/package.json" = "overlay"
@@ -211,8 +215,11 @@ hints = [
  docs_badge = { capability = "docs-site", fragments = ["shared:docs/README.md.j2"] }
  docs_section = { capability = "docs-site", fragments = ["shared:docs/README-section.md.j2"] }
  [templates.rust.slots."CONTRIBUTING.md"]
+ project_principles = ["overlay:contributing/project-principles.md.j2"]
+ audit_command = ["overlay:contributing/audit-command.md.j2"]
  docs_section = { capability = "docs-site", fragments = ["shared:docs/CONTRIBUTING-section.md.j2"] }
  [templates.rust.slots.".gitignore"]
+ project_ignored_paths = ["overlay:gitignore/project-ignored-paths.j2"]
  docs_ignored_paths = { capability = "docs-site", fragments = ["shared:docs-ignored-paths.j2"] }
  coverage_ignored_paths = { capability = "codecov-upload", fragments = ["overlay:gitignore/coverage.j2"] }
  [templates.rust.capability_outputs]

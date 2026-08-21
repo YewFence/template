@@ -1,0 +1,13 @@
+<% set ignored_paths = [
+  slot("project_ignored_paths", optional=true) | trim,
+  slot("docs_ignored_paths", optional=true) | trim,
+  slot("coverage_ignored_paths", optional=true) | trim,
+] | reject("equalto", "") | join("\n") %><% if ignored_paths %><$ ignored_paths $>
+
+<% endif %>.codex
+.claude
+
+.env
+.env.local
+
+mise.local.toml

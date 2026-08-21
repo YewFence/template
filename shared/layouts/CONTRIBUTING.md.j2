@@ -16,8 +16,7 @@ mise run hooks:install
 
 - Keep reusable commands and toolchain definitions in mise so local development and CI use the same entry points.
 - Run `mise run check` before finishing a change. If it fails, try `mise run fix`, then correct any remaining issues manually.
-- Treat Clippy warnings as errors and keep code formatted with rustfmt.
-- Use Cargo commands to regenerate `Cargo.lock`; do not edit it manually.
+<$ slot("project_principles") | trim $>
 
 ## Common Commands
 
@@ -40,7 +39,7 @@ mise run test
 mise run lint
 
 # Audit project dependencies
-mise -E ci run audit
+<$ slot("audit_command") | trim $>
 ```
 <$ slot("docs_section", optional=true) $>
 ## GitHub Actions Maintenance
