@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import tomllib
 from pathlib import Path
@@ -14,6 +15,16 @@ REPOSITORY_ROOT = Path(__file__).parents[3]
 
 
 class TestValidationAdapter:
+    def test_common_namespaced_task_is_discoverable(self) -> None:
+        completed = subprocess.run(
+            ["mise", "run", "//overlays/common:check", "--help"],
+            cwd=REPOSITORY_ROOT,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        assert "Usage: //overlays/common:check <template_root>" in completed.stdout
+
     @pytest.mark.parametrize("profile", ("common", "go-cli", "rust"))
     def test_docs_site_disabled_skips_documentation_toolchain(self, profile: str) -> None:
         calls = self.run_adapter(profile, ())
@@ -106,24 +117,34 @@ class TestValidationAdapter:
                 staged_capabilities,
             )
 
-            config = tomllib.loads(
-                (REPOSITORY_ROOT / "overlays" / profile / "mise.toml").read_text(
-                    encoding="utf-8"
-                )
-            )
-            script = config["tasks"]["check"]["run"].replace(
-                '"{{ usage.template_root }}"', f'"{template_root}"'
-            )
             environment = os.environ | {
                 "PATH": f"{binary_directory}:{os.environ['PATH']}",
                 "TEMPLATE_TOOL_ENABLED_CAPABILITIES": json.dumps(
                     enabled_capabilities, separators=(",", ":")
                 ),
             } | shim_environment
+            if profile == "common":
+                command = [
+                    sys.executable,
+                    str(REPOSITORY_ROOT / "overlays/common/validation/check.py"),
+                    str(template_root),
+                ]
+                cwd = REPOSITORY_ROOT
+            else:
+                config = tomllib.loads(
+                    (REPOSITORY_ROOT / "overlays" / profile / "mise.toml").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                script = config["tasks"]["check"]["run"].replace(
+                    '"{{ usage.template_root }}"', f'"{template_root}"'
+                )
+                command = ["/bin/bash", "-eu", "-c", script]
+                cwd = REPOSITORY_ROOT / "overlays" / profile
 
             subprocess.run(
-                ["/bin/bash", "-eu", "-c", script],
-                cwd=REPOSITORY_ROOT / "overlays" / profile,
+                command,
+                cwd=cwd,
                 env=environment,
                 check=True,
                 text=True,

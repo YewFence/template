@@ -66,7 +66,7 @@ mise tasks info //overlays/common:check
 mise run //overlays/common:check /tmp/staging/common
 ```
 
-对应的 Go CLI 和 Rust task 分别是 `//overlays/go-cli:check` 与 `//overlays/rust:check`。这些 task 只接收 staging template root，并从 `TEMPLATE_TOOL_ENABLED_CAPABILITIES` 读取当前 case；完整 capability matrix 和 disposable staging 生命周期仍由 `template-tool` 的根 `check` task 管理。
+对应的 Go CLI 和 Rust task 分别是 `//overlays/go-cli:check` 与 `//overlays/rust:check`。这些 task 只接收 staging template root，并从 `TEMPLATE_TOOL_ENABLED_CAPABILITIES` 读取当前 case；完整 capability matrix 和 disposable staging 生命周期仍由 `template-tool` 的根 `check` task 管理。adapter 的共享 capability parser、命令 context 和合同断言位于 `tools/template-tool/src/template_tool/staging_validation/`，profile-specific 行为位于对应的 `overlays/<name>/validation/check.py`。
 
 `render` 从声明式来源重新生成一个或全部 profile 的默认 capability 集合 preview。写入采用 staging 和原子替换，并保留普通文件的 executable bit、路径边界与 symlink 安全约束。
 
