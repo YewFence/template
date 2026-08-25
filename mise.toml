@@ -1,5 +1,10 @@
+monorepo_root = true
+
 [settings]
 lockfile = true
+
+[monorepo]
+config_roots = ["overlays/*"]
 
 [tools]
 pinact = "4"

@@ -58,6 +58,16 @@ mise run sync:check [template]
 mise run check [template]
 ```
 
+根 `mise.toml` 启用 `monorepo_root = true`，因此 overlay validation adapter 以 namespaced task 的形式从仓库根目录发现和调用：
+
+```text
+mise tasks ls --all
+mise tasks info //overlays/common:check
+mise run //overlays/common:check /tmp/staging/common
+```
+
+对应的 Go CLI 和 Rust task 分别是 `//overlays/go-cli:check` 与 `//overlays/rust:check`。这些 task 只接收 staging template root，并从 `TEMPLATE_TOOL_ENABLED_CAPABILITIES` 读取当前 case；完整 capability matrix 和 disposable staging 生命周期仍由 `template-tool` 的根 `check` task 管理。
+
 `render` 从声明式来源重新生成一个或全部 profile 的默认 capability 集合 preview。写入采用 staging 和原子替换，并保留普通文件的 executable bit、路径边界与 symlink 安全约束。
 
 `sync:check` 执行默认 capability 集合的只读重建，将结果与 `templates/<name>/` 比较，用于发现手工修改或过期 preview。它验证的是仍含 metadata token 的未实例化 blueprint，不生成依赖状态，也不为非默认组合维护 expected tree。

@@ -106,6 +106,8 @@ class TestTemplateCheck:
             mise.write_text(
                 "#!/bin/sh\n"
                 "set -eu\n"
+                "test \"$1\" = run\n"
+                "test \"$2\" = //overlays/example:check\n"
                 "template_root=$3\n"
                 "test \"$TEMPLATE_TOOL_ENABLED_CAPABILITIES\" = '[\"docs-site\",\"release\"]'\n"
                 "test -f \"$template_root/docs.txt\"\n"

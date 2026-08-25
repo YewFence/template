@@ -496,14 +496,14 @@ def _run_template_project_check(
 
         overlay_root = repository.overlays_root / template
         check_environment = template_environment | {
-            "MISE_TRUSTED_CONFIG_PATHS": f"{overlay_root}:{template_root}",
+            "MISE_TRUSTED_CONFIG_PATHS": f"{repository.root}:{overlay_root}:{template_root}",
             "TEMPLATE_TOOL_ENABLED_CAPABILITIES": json.dumps(
                 enabled_capabilities, separators=(",", ":")
             ),
         }
         completed = subprocess.run(
-            ["mise", "run", "check", str(template_root)],
-            cwd=overlay_root,
+            ["mise", "run", f"//overlays/{template}:check", str(template_root)],
+            cwd=repository.root,
             env=check_environment,
             check=False,
         )
