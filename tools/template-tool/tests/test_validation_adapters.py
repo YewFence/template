@@ -5,7 +5,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -24,6 +23,16 @@ class TestValidationAdapter:
             capture_output=True,
         )
         assert "Usage: //overlays/common:check <template_root>" in completed.stdout
+
+    def test_go_cli_namespaced_task_is_discoverable(self) -> None:
+        completed = subprocess.run(
+            ["mise", "run", "//overlays/go-cli:check", "--help"],
+            cwd=REPOSITORY_ROOT,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        assert "Usage: //overlays/go-cli:check <template_root>" in completed.stdout
 
     @pytest.mark.parametrize("profile", ("common", "go-cli", "rust"))
     def test_docs_site_disabled_skips_documentation_toolchain(self, profile: str) -> None:
@@ -123,20 +132,18 @@ class TestValidationAdapter:
                     enabled_capabilities, separators=(",", ":")
                 ),
             } | shim_environment
-            if profile == "common":
+            if profile in {"common", "go-cli"}:
                 command = [
                     sys.executable,
-                    str(REPOSITORY_ROOT / "overlays/common/validation/check.py"),
+                    str(REPOSITORY_ROOT / "overlays" / profile / "validation/check.py"),
                     str(template_root),
                 ]
                 cwd = REPOSITORY_ROOT
             else:
-                config = tomllib.loads(
-                    (REPOSITORY_ROOT / "overlays" / profile / "mise.toml").read_text(
-                        encoding="utf-8"
-                    )
+                config = (REPOSITORY_ROOT / "overlays" / profile / "mise.toml").read_text(
+                    encoding="utf-8"
                 )
-                script = config["tasks"]["check"]["run"].replace(
+                script = config.split("run = '''", 1)[1].split("'''", 1)[0].replace(
                     '"{{ usage.template_root }}"', f'"{template_root}"'
                 )
                 command = ["/bin/bash", "-eu", "-c", script]

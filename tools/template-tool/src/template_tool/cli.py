@@ -441,12 +441,13 @@ def _run_template_project_check(
 ) -> None:
     enabled_capabilities = tuple(sorted(enabled_capabilities))
     environment = os.environ.copy()
+    _isolate_mise_global_config(environment)
     environment.update(
         {
-            "MISE_CEILING_PATHS": str(repository.root),
-            "MISE_GLOBAL_CONFIG_FILE": "/dev/null",
+            "MISE_CEILING_PATHS": str(repository.root.parent),
             "MISE_LOCKED": "1",
             "MISE_TASK_RUN_AUTO_INSTALL": "false",
+            "TEMPLATE_TOOL_REPOSITORY_ROOT": str(repository.root),
             "RUSTFLAGS": "",
         }
     )
@@ -509,6 +510,34 @@ def _run_template_project_check(
         )
     if completed.returncode != 0:
         raise TemplateError(f"overlay check exited with {completed.returncode}")
+
+
+def _isolate_mise_global_config(environment: dict[str, str]) -> None:
+    """Keep user-global mise configuration out of disposable project checks."""
+    configured_global_file = environment.pop("MISE_GLOBAL_CONFIG_FILE", None)
+    config_dir = environment.get("MISE_CONFIG_DIR") or None
+    if config_dir is None:
+        xdg_config_home = environment.get("XDG_CONFIG_HOME")
+        if not xdg_config_home:
+            if os.name == "nt":
+                xdg_config_home = environment.get("APPDATA") or str(
+                    Path.home() / "AppData/Roaming"
+                )
+            else:
+                xdg_config_home = str(Path.home() / ".config")
+        config_dir = str(Path(xdg_config_home) / "mise")
+
+    ignored_paths = [
+        path
+        for path in environment.get("MISE_IGNORED_CONFIG_PATHS", "").split(os.pathsep)
+        if path
+    ]
+    if config_dir not in ignored_paths:
+        ignored_paths.insert(0, config_dir)
+    if configured_global_file and configured_global_file != os.devnull:
+        if configured_global_file not in ignored_paths:
+            ignored_paths.append(configured_global_file)
+    environment["MISE_IGNORED_CONFIG_PATHS"] = os.pathsep.join(ignored_paths)
 
 
 def apply_main(argv: list[str] | None = None) -> None:

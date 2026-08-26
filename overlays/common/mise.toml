@@ -4,6 +4,6 @@ usage = '''
 arg "<template_root>" help="Staging template root"
 '''
 run = '''
-repository_root="$(git rev-parse --show-toplevel)"
+repository_root="${TEMPLATE_TOOL_REPOSITORY_ROOT:-$(git rev-parse --show-toplevel)}"
 uv run --project "${repository_root}/tools/template-tool" python "${repository_root}/overlays/common/validation/check.py" "{{ usage.template_root }}"
 '''

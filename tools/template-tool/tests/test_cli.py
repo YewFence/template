@@ -14,6 +14,7 @@ from template_tool.cli import (
     ApplicationError,
     TemplateError,
     _collect_metadata,
+    _isolate_mise_global_config,
     _metadata_from_args,
     _run_template_project_check,
     check_main,
@@ -23,6 +24,50 @@ REPOSITORY_ROOT = Path(__file__).parents[3]
 
 
 class TestTemplateCheck:
+    @pytest.mark.parametrize(
+        ("environment", "expected"),
+        (
+            (
+                {
+                    "MISE_CONFIG_DIR": "/custom/mise",
+                    "MISE_GLOBAL_CONFIG_FILE": "/dev/null",
+                    "MISE_IGNORED_CONFIG_PATHS": "/existing:/custom/mise",
+                },
+                {
+                    "MISE_CONFIG_DIR": "/custom/mise",
+                    "MISE_IGNORED_CONFIG_PATHS": "/existing:/custom/mise",
+                },
+            ),
+            (
+                {
+                    "XDG_CONFIG_HOME": "/xdg",
+                    "MISE_GLOBAL_CONFIG_FILE": "/custom/global.toml",
+                    "MISE_IGNORED_CONFIG_PATHS": "/existing",
+                },
+                {
+                    "XDG_CONFIG_HOME": "/xdg",
+                    "MISE_IGNORED_CONFIG_PATHS": "/xdg/mise:/existing:/custom/global.toml",
+                },
+            ),
+        ),
+    )
+    def test_isolate_mise_global_config_uses_supported_ignores(
+        self, environment: dict[str, str], expected: dict[str, str]
+    ) -> None:
+        _isolate_mise_global_config(environment)
+
+        assert "MISE_GLOBAL_CONFIG_FILE" not in environment
+        assert environment == expected
+
+    def test_isolate_mise_global_config_defaults_to_user_config_directory(self) -> None:
+        environment: dict[str, str] = {}
+
+        _isolate_mise_global_config(environment)
+
+        assert environment["MISE_IGNORED_CONFIG_PATHS"] == str(
+            Path.home() / ".config/mise"
+        )
+
     def test_check_runs_every_capability_combination_and_summarizes_failures(
         self, mocker: MockerFixture
     ) -> None:
@@ -110,6 +155,10 @@ class TestTemplateCheck:
                 "test \"$2\" = //overlays/example:check\n"
                 "template_root=$3\n"
                 "test \"$TEMPLATE_TOOL_ENABLED_CAPABILITIES\" = '[\"docs-site\",\"release\"]'\n"
+                "test \"$MISE_CEILING_PATHS\" = \"$(dirname \"$PWD\")\"\n"
+                "test \"$TEMPLATE_TOOL_REPOSITORY_ROOT\" = \"$PWD\"\n"
+                "test -z \"${MISE_GLOBAL_CONFIG_FILE:-}\"\n"
+                "test \"$MISE_IGNORED_CONFIG_PATHS\" = '/tmp/mise-global:/tmp/existing-ignore'\n"
                 "test -f \"$template_root/docs.txt\"\n"
                 "test -f \"$template_root/release.txt\"\n"
                 "test ! -e \"$template_root/.git\"\n"
@@ -122,7 +171,10 @@ class TestTemplateCheck:
             mise.chmod(0o755)
 
             environment = os.environ | {
-                "PATH": f"{binary_directory}:{os.environ['PATH']}"
+                "PATH": f"{binary_directory}:{os.environ['PATH']}",
+                "MISE_CONFIG_DIR": "/tmp/mise-global",
+                "MISE_GLOBAL_CONFIG_FILE": "/dev/null",
+                "MISE_IGNORED_CONFIG_PATHS": "/tmp/existing-ignore",
             }
             for key in tuple(os.environ):
                 monkeypatch.delenv(key, raising=False)
