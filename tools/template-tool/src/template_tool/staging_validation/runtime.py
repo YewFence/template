@@ -209,7 +209,6 @@ def validate_codecov_upload(
         _require_text(
             coverage_job,
             (
-                "run: mise run coverage",
                 "contents: read",
                 "uses: codecov/codecov-action@v7",
                 "binary: ${{ steps.codecov-cli.outputs.path }}",
@@ -222,6 +221,8 @@ def validate_codecov_upload(
             ),
             message="codecov-upload enabled but coverage job is missing",
         )
+        if not re.search(r"run:\s*(?:\|\s*)?mise run coverage", coverage_job):
+            raise ValidationError("codecov-upload coverage job is missing: run: mise run coverage")
         _require_no_match(
             coverage_job,
             r"id-token: write|contents: write|packages: write|pull-requests: write|CODECOV_TOKEN|pull_request_target|use_oidc|override_branch|override_pr|skip_validation",

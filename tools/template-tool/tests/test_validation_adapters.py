@@ -34,6 +34,16 @@ class TestValidationAdapter:
         )
         assert "Usage: //overlays/go-cli:check <template_root>" in completed.stdout
 
+    def test_rust_namespaced_task_is_discoverable(self) -> None:
+        completed = subprocess.run(
+            ["mise", "run", "//overlays/rust:check", "--help"],
+            cwd=REPOSITORY_ROOT,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        assert "Usage: //overlays/rust:check <template_root>" in completed.stdout
+
     @pytest.mark.parametrize("profile", ("common", "go-cli", "rust"))
     def test_docs_site_disabled_skips_documentation_toolchain(self, profile: str) -> None:
         calls = self.run_adapter(profile, ())
@@ -132,22 +142,12 @@ class TestValidationAdapter:
                     enabled_capabilities, separators=(",", ":")
                 ),
             } | shim_environment
-            if profile in {"common", "go-cli"}:
-                command = [
-                    sys.executable,
-                    str(REPOSITORY_ROOT / "overlays" / profile / "validation/check.py"),
-                    str(template_root),
-                ]
-                cwd = REPOSITORY_ROOT
-            else:
-                config = (REPOSITORY_ROOT / "overlays" / profile / "mise.toml").read_text(
-                    encoding="utf-8"
-                )
-                script = config.split("run = '''", 1)[1].split("'''", 1)[0].replace(
-                    '"{{ usage.template_root }}"', f'"{template_root}"'
-                )
-                command = ["/bin/bash", "-eu", "-c", script]
-                cwd = REPOSITORY_ROOT / "overlays" / profile
+            command = [
+                sys.executable,
+                str(REPOSITORY_ROOT / "overlays" / profile / "validation/check.py"),
+                str(template_root),
+            ]
+            cwd = REPOSITORY_ROOT
 
             subprocess.run(
                 command,
@@ -172,6 +172,11 @@ class TestValidationAdapter:
         (template_root / ".github/workflows").mkdir(parents=True)
         ci_lines = ["jobs:", "  check:"]
         if codecov_enabled:
+            coverage_run = (
+                ("        run: |", "          mise run coverage")
+                if profile == "rust"
+                else ("        run: mise run coverage",)
+            )
             ci_lines.extend(
                 (
                     "  coverage:",
@@ -180,7 +185,7 @@ class TestValidationAdapter:
                     "      contents: read",
                     "    steps:",
                     "      - name: Generate coverage report",
-                    "        run: mise run coverage",
+                    *coverage_run,
                     "        id: coverage",
                     "      - name: Resolve Codecov CLI",
                     "        id: codecov-cli",
