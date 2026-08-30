@@ -7,3 +7,6 @@ run = '''
 repository_root="${TEMPLATE_TOOL_REPOSITORY_ROOT:-$(git rev-parse --show-toplevel)}"
 uv run --project "${repository_root}/tools/template-tool" python "${repository_root}/overlays/common/validation/check.py" "{{ usage.template_root }}"
 '''
+
+[env]
+_.path = { path = ["{{ get_env(name='TEMPLATE_TOOL_VALIDATION_BIN', default='/var/empty') }}"] }

@@ -198,8 +198,8 @@ def validate_codecov_upload(
     gitignore = context.read(".gitignore") if context.exists(".gitignore") else ""
     coverage_workflow = context.read(".github/workflows/coverage.yml") if context.exists(".github/workflows/coverage.yml") else ""
     if enabled:
-        coverage_job = _job_text(ci_workflow, "coverage")
         context.assert_tasks(("coverage",), message="codecov-upload enabled but mise coverage task is missing")
+        coverage_job = _job_text(ci_workflow, "coverage")
         mise = context.read("mise.toml")
         _require_text(
             mise,
