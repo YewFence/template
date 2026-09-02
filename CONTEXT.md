@@ -37,5 +37,5 @@ The materialization of a selected template ref, profile, capability set, and met
 _Avoid_: Quick init, template update, project upgrade
 
 **Validation adapter**:
-A monorepo-only mise task under a template overlay that generates disposable dependency state and then runs the staged template's own checks. It is not part of the template deliverable.
+A monorepo-only validation entrypoint owned by a template overlay. Implemented as `overlays/<name>/validation/check.py` and registered as a namespaced mise task, it validates a staged template's capability contracts, generates disposable dependency state, and runs the staged template's own checks. It is not part of the template deliverable.
 _Avoid_: Lock updater, template check

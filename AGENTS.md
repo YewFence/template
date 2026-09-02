@@ -19,6 +19,7 @@
 - `shared/renovate/`：生成模板 Renovate 配置的公共来源。
 - `overlays/<name>/static/`：单个模板拥有的文件。
 - `overlays/<name>/fragments/`：单个模板提供的 adapter fragment。
+- `overlays/<name>/validation/`：单个模板拥有的 validation adapter 实现，由 `overlays/<name>/mise.toml` 的 namespaced task 注册调用。
 - `overlays/<name>/mise.toml`：只供 monorepo staging validation 使用，不进入 template deliverable。
 - `overlays/<name>/README.md`：面向模板使用者的模板说明，不进入 template deliverable。
 - `templates/<name>/`：renderer 生成的完整、自包含默认 capability 集合 preview。

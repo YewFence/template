@@ -16,6 +16,7 @@ shared/                 模板无关的共享来源
 overlays/<name>/        单个模板拥有的来源
 ├── static/             模板专属文件
 ├── fragments/          模板专属 adapter fragment
+├── validation/          profile-specific validation adapter
 └── mise.toml           只供 monorepo staging validation 使用
 
 templates/<name>/       renderer 生成的默认 capability 集合 preview
@@ -58,7 +59,7 @@ mise run sync:check [template]
 mise run check [template]
 ```
 
-根 `mise.toml` 启用 `monorepo_root = true`，因此 overlay validation adapter 以 namespaced task 的形式从仓库根目录发现和调用：
+根 `mise.toml` 启用 `monorepo_root = true`，因此 overlay validation adapter 通过各自 overlay 的 namespaced task 注册，从仓库根目录发现和显式调用：
 
 ```text
 mise tasks ls --all
@@ -92,7 +93,7 @@ monorepo 自身的维护环境与模板交付物分离。根 `mise.lock`、`tool
 1. 共享模板准备内核验证完整 profile 合同、解析 case 的 effective capability set，并在隔离 destination 渲染未实例化 blueprint。
 2. 工具读取 `templates.toml` 中固定的 validation metadata，复用正式 project instantiation 引擎替换内容和路径 token。
 3. 工具检查生成树仍处于 unbootstrapped template 状态，并为 staging 建立外部 `GIT_DIR`、`GIT_WORK_TREE` 和 `GIT_INDEX_FILE`，不向模板目录写入 `.git`。
-4. 对应 `overlays/<name>/mise.toml` validation adapter 从按名称排序的显式 capability set 生成临时 mise、语言、文档和 Action 状态。
+4. 对应 overlay validation adapter（经 `overlays/<name>/mise.toml` 的 namespaced task 注册调用）从按名称排序的显式 capability set 生成临时 mise、语言、文档和 Action 状态。
 5. adapter 验证 capability-specific 任务和输出的存在或缺席，运行对应检查及模板自己的完整 `mise run check`。
 6. Python orchestration 汇总全部 case 结果，整个 staging 及生成状态在检查结束后丢弃。
 
