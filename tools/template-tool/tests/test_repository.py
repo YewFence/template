@@ -658,6 +658,35 @@ class TestTemplateRepository:
         with pytest.raises(TemplateError, match="contribution references undeclared capability"):
             TemplateRepository(self.root).render("example")
 
+    @pytest.mark.parametrize("template", ("common", "go-cli", "rust"))
+    @pytest.mark.parametrize("docs_enabled", (False, True))
+    def test_action_versions_workflow_is_separate_from_ci(
+        self, template: str, docs_enabled: bool
+    ) -> None:
+        repository_root = Path(__file__).resolve().parents[3]
+        repository = TemplateRepository(repository_root)
+        capabilities = repository.resolve_capabilities(template)
+        if not docs_enabled:
+            capabilities = tuple(c for c in capabilities if c != "docs-site")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / template
+            repository.render_to(template, output, enabled_capabilities=capabilities)
+            workflow = (output / ".github/workflows/actions-version.yml").read_text()
+            ci = (output / ".github/workflows/ci.yml").read_text()
+            mise = (output / "mise.toml").read_text()
+
+            assert "on:\n  push:\n    branches: [main]\n  workflow_dispatch:\n" in workflow
+            assert "if: github.ref == 'refs/heads/main'" in workflow
+            assert "pull_request:" not in workflow
+            assert "run: mise run actions:versions:check" in workflow
+            assert "actions-version:" not in ci
+            assert "actions:versions:check" not in ci
+            assert "  pull_request:\n    branches: [main]" in ci
+            assert "run: mise run check" in ci
+            assert '{ task = "actions:check" }' in mise
+            assert 'depends = ["actions:pin-offline:check"]' in mise
+
     def test_docs_site_capability_renders_complete_profile_variants(self) -> None:
         repository_root = Path(__file__).resolve().parents[3]
         repository = TemplateRepository(repository_root)
@@ -686,6 +715,11 @@ class TestTemplateRepository:
 
                 assert (enabled / "docs/package.json").is_file()
                 assert (enabled / ".github/workflows/docs.yml").is_file()
+                docs_workflow = (enabled / ".github/workflows/docs.yml").read_text()
+                assert (
+                    'on:\n  push:\n    branches: [main]\n    paths:\n'
+                    '      - "docs/**"\n  workflow_dispatch:\n'
+                ) in docs_workflow
                 assert not ((disabled / "docs").exists())
                 assert not ((disabled / ".github/workflows/docs.yml").exists())
 
