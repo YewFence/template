@@ -137,6 +137,10 @@ Capability selection 与 metadata 相互独立，并先于 project instantiation
 
 模板 workflow 只拥有触发器、权限、并发、缓存、平台矩阵及 mise 启动基础设施。项目检查、审计、版本和打包行为通过稳定 mise 任务调用，workflow 不复制项目内部命令组合。
 
+模板 GitHub Release workflow 在版本解析时固定 checkout commit SHA，构建和发布复用该 SHA，发布 job 按解析出的 tag 互斥。共享 `.github/scripts/publish-release.sh` 是 GitHub 平台 adapter：使用只读 API 查询 Release 和精确 tag ref、校验 tag 指向，再通过 `gh release create`、`upload` 和 `edit` 发布。只有 release PR 合并入口允许 GitHub 自动创建 tag，目标为该固定 SHA；tag push 和手动发布入口要求远端 tag 已存在。不再交付本地建 tag 的 `release:tag:create` task。
+
+首次发布的附件、临时草稿、公开顺序和失败清理由 `gh release create` 管理。已有草稿和已发布 Release 的重跑覆盖生成的说明、prerelease 状态和同名附件，保留人工标题和额外附件；草稿在上传成功后公开。Latest 沿用 CLI 默认自动判定，不显式设置 `--latest`。不探测或绕过 GitHub immutable release 保护，不为重跑的部分失败增加回滚，也不主动删除既有 Release 或 tag。
+
 根 `.github/workflows/` 只维护 monorepo 自身的生成同步、工具测试和 staging validation，不参与模板 workflow 的 render，避免维护 CI 依赖其自身生成结果。
 
 根 Renovate 只维护 monorepo 环境，包括根 workflow、根 mise 状态和 `tools/**`。模板 blueprint 的兼容版本线由维护者审查；生成项目中的完整 Renovate 配置负责项目引导后的依赖更新和 lockfile maintenance。

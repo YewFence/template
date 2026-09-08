@@ -659,6 +659,32 @@ class TestTemplateRepository:
             TemplateRepository(self.root).render("example")
 
     @pytest.mark.parametrize("template", ("common", "go-cli", "rust"))
+    @pytest.mark.parametrize("capabilities_enabled", (False, True))
+    def test_release_workflow_uses_shared_gh_adapter(
+        self, template: str, capabilities_enabled: bool
+    ) -> None:
+        repository = TemplateRepository(Path(__file__).resolve().parents[3])
+        capabilities = repository.resolve_capabilities(template) if capabilities_enabled else ()
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / template
+            repository.render_to(template, output, enabled_capabilities=capabilities)
+            workflow = (output / ".github/workflows/release.yml").read_text()
+            ci_tasks = tomllib.loads((output / "mise.ci.toml").read_text())["tasks"]
+            assert (output / ".github/scripts/publish-release.sh").is_file()
+            assert "run: bash .github/scripts/publish-release.sh" in workflow
+            assert 'checkout_ref="$(git rev-parse HEAD)"' in workflow
+            assert 'checkout_ref="${REF_NAME}"' not in workflow
+            assert 'checkout_ref="${INPUT_TAG}"' not in workflow
+            assert "group: github-release-${{ needs.version.outputs.tag }}" in workflow
+            assert "RELEASE_COMMIT: ${{ needs.version.outputs.checkout_ref }}" in workflow
+            assert "ALLOW_TAG_CREATION: ${{ needs.version.outputs.allow_tag_creation }}" in workflow
+            assert ("RELEASE_ASSET_DIR: dist" in workflow) is (template != "common")
+            assert "softprops/action-gh-release" not in workflow
+            assert "git push" not in workflow
+            assert "release:tag:create" not in ci_tasks
+            assert "release:tag" in ci_tasks
+
+    @pytest.mark.parametrize("template", ("common", "go-cli", "rust"))
     @pytest.mark.parametrize("docs_enabled", (False, True))
     def test_action_versions_workflow_is_separate_from_ci(
         self, template: str, docs_enabled: bool

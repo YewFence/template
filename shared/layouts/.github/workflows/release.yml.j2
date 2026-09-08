@@ -43,7 +43,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       checkout_ref: ${{ steps.release.outputs.checkout_ref }}
       should_release: ${{ steps.release.outputs.should_release }}
-      create_tag: ${{ steps.release.outputs.create_tag }}
+      allow_tag_creation: ${{ steps.release.outputs.allow_tag_creation }}
       prerelease: ${{ steps.release.outputs.prerelease }}
     env:
       MISE_TASK_RUN_AUTO_INSTALL: "false"
@@ -86,27 +86,23 @@ jobs:
         env:
           INPUT_TAG: ${{ inputs.tag }}
           REF_NAME: ${{ github.ref_name }}
-          MERGE_COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           tag=""
-          checkout_ref="${GITHUB_SHA}"
+          checkout_ref="$(git rev-parse HEAD)"
           should_release="false"
-          create_tag="false"
+          allow_tag_creation="false"
           prerelease="false"
 
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             tag="${INPUT_TAG}"
-            checkout_ref="${INPUT_TAG}"
             should_release="true"
           elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             tag="${REF_NAME}"
-            checkout_ref="${REF_NAME}"
             should_release="true"
           elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             tag="$(mise run release:tag)"
-            checkout_ref="${MERGE_COMMIT_SHA:-${GITHUB_SHA}}"
             should_release="true"
-            create_tag="true"
+            allow_tag_creation="true"
           fi
 
           if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
@@ -120,7 +116,7 @@ jobs:
 
           echo "Resolved release tag ${tag}"
           echo "Release checkout ref ${checkout_ref}"
-          echo "Create tag ${create_tag}"
+          echo "Allow tag creation ${allow_tag_creation}"
           echo "Prerelease ${prerelease}"
 
           {
@@ -133,7 +129,7 @@ jobs:
             echo "| Version | \`${tag#v}\` |"
             echo "| Checkout ref | \`${checkout_ref}\` |"
             echo "| Should release | \`${should_release}\` |"
-            echo "| Create tag | \`${create_tag}\` |"
+            echo "| Allow tag creation | \`${allow_tag_creation}\` |"
             echo "| Prerelease | \`${prerelease}\` |"
           } >> "${GITHUB_STEP_SUMMARY}"
 
@@ -142,12 +138,12 @@ jobs:
             echo "version=${tag#v}"
             echo "checkout_ref=${checkout_ref}"
             echo "should_release=${should_release}"
-            echo "create_tag=${create_tag}"
+            echo "allow_tag_creation=${allow_tag_creation}"
             echo "prerelease=${prerelease}"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Validate release PR freshness
-        if: ${{ github.event_name == 'pull_request' && steps.release.outputs.create_tag == 'true' }}
+        if: ${{ github.event_name == 'pull_request' && steps.release.outputs.allow_tag_creation == 'true' }}
         env:
           MERGE_COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
@@ -202,6 +198,9 @@ jobs:
     needs: <$ slot("release_needs") | trim $>
     if: ${{ needs.version.outputs.should_release == 'true' }}
     runs-on: ubuntu-latest
+    concurrency:
+      group: github-release-${{ needs.version.outputs.tag }}
+      cancel-in-progress: false
     permissions:
       contents: write
     env:
@@ -214,6 +213,7 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.checkout_ref }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup mise
         uses: jdx/mise-action@v4
@@ -241,40 +241,22 @@ jobs:
             echo "| --- | --- |"
             echo "| Release tag | \`${RELEASE_TAG}\` |"
             echo "| Prerelease | \`${{ needs.version.outputs.prerelease }}\` |"
-            echo "| Create tag | \`${{ needs.version.outputs.create_tag }}\` |"
+            echo "| Allow tag creation | \`${{ needs.version.outputs.allow_tag_creation }}\` |"
           } >> "${GITHUB_STEP_SUMMARY}"
 
           echo "path=${notes_file}" >> "${GITHUB_OUTPUT}"
 <$ slot("release_artifact_download", optional=true) $>
-      - name: Create release tag
-        if: ${{ needs.version.outputs.create_tag == 'true' }}
+      - name: Publish release
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.version.outputs.tag }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch --tags --force
-          mise run release:tag:create
-          git push origin "${RELEASE_TAG}"
-          echo "Created release tag ${RELEASE_TAG}"
-          echo "| Release tag Created | \`true\` |" >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Record existing release tag
-        if: ${{ needs.version.outputs.create_tag != 'true' }}
-        env:
-          RELEASE_TAG: ${{ needs.version.outputs.tag }}
-        run: |
-          echo "Using existing release tag ${RELEASE_TAG}"
-          echo "| Release tag Created | \`false\` |"  >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Create release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          body_path: ${{ steps.notes.outputs.path }}
+          RELEASE_COMMIT: ${{ needs.version.outputs.checkout_ref }}
+          ALLOW_TAG_CREATION: ${{ needs.version.outputs.allow_tag_creation }}
+          RELEASE_PRERELEASE: ${{ needs.version.outputs.prerelease }}
+          RELEASE_NOTES_FILE: ${{ steps.notes.outputs.path }}
 <$ slot("release_files", optional=true) $>
-          prerelease: ${{ needs.version.outputs.prerelease }}
-          make_latest: legacy
+        run: bash .github/scripts/publish-release.sh
 
       - name: Summarize published release
         env:
