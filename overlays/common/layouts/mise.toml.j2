@@ -64,7 +64,13 @@ run = 'echo "[PLACEHOLDER] Replace build:check with a compile-only check, such a
 
 [tasks."leaks:check"]
 description = "Run betterleaks checks"
-run = "betterleaks git . --pre-commit --redact --no-banner"
+run = '''
+if jj root >/dev/null 2>&1; then
+    jj diff --git 2>/dev/null | betterleaks stdin --redact --no-banner
+else
+    betterleaks git . --pre-commit --redact --no-banner
+fi
+'''
 
 [tasks."typos:check"]
 description = "Run Typos Lint"
@@ -76,11 +82,25 @@ run = "typos --write-changes"
 
 [tasks."newline:check"]
 description = "Check final newlines and surrounding whitespace in tracked text files"
-run = "git grep -Ilz '' -- . {{ vars.nllint_excludes }} | xargs -0 nllint --trim-space"
+run = '''
+set -o pipefail
+if jj root >/dev/null 2>&1; then
+    jj --ignore-working-copy file list | xargs -d '\n' nllint --trim-space
+else
+    git grep -Ilz '' -- . {{ vars.nllint_excludes }} | xargs -0 nllint --trim-space
+fi
+'''
 
 [tasks."newline:fix"]
 description = "Fix final newlines and surrounding whitespace in tracked text files"
-run = "git grep -Ilz '' -- . {{ vars.nllint_excludes }} | xargs -0 nllint --fix --trim-space"
+run = '''
+set -o pipefail
+if jj root >/dev/null 2>&1; then
+    jj --ignore-working-copy file list | xargs -d '\n' nllint --fix --trim-space
+else
+    git grep -Ilz '' -- . {{ vars.nllint_excludes }} | xargs -0 nllint --fix --trim-space
+fi
+'''
 
 [tasks.check]
 description = "Run read-only project and repository checks"
