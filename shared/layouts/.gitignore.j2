@@ -4,10 +4,7 @@
   slot("coverage_ignored_paths", optional=true) | trim,
 ] | reject("equalto", "") | join("\n") %><% if ignored_paths %><$ ignored_paths $>
 
-<% endif %>.codex
-.claude
-
-.env
+<% endif %>.env
 .env.local
 
 mise.local.toml

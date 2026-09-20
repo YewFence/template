@@ -2,9 +2,6 @@
 /docs/.vitepress/cache/
 /docs/.vitepress/dist/
 
-.codex
-.claude
-
 .env
 .env.local
 
