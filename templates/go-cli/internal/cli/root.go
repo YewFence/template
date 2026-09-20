@@ -10,8 +10,8 @@ import (
 func NewRootCommand(version string) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "{{BINARY_NAME}}",
-		Short: "Your CLI description",
-		Long:  "Your CLI description.",
+		Short: {{PROJECT_DESCRIPTION_JSON}},
+		Long:  {{PROJECT_DESCRIPTION_JSON}},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), "Hello from {{BINARY_NAME}}")
 			return err

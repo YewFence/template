@@ -16,7 +16,7 @@ mise run build
 
 ## Installation Examples
 
-For Zsh, place the generated `_{{PROJECT_NAME}}` file in an existing directory from `$fpath`, or place it in a custom directory and add that directory in `~/.zshrc`.
+For Zsh, place the generated `_{{BINARY_NAME}}` file in an existing directory from `$fpath`, or place it in a custom directory and add that directory in `~/.zshrc`.
 
 ```bash
 mkdir -p ~/.zsh/completions
