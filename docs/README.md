@@ -4,6 +4,7 @@ Current guides, architecture, decisions, and plans for this monorepo.
 
 ## For Template Users
 
+- [Agent skill](../skills/use-template/SKILL.md): the same flow driven by a coding agent — profile and capability selection, instantiation, conflict resolution, and bootstrap to a passing check.
 - [Usage guide](guides/use-template.md): every way to consume the templates — init, apply, export, capability queries, non-interactive usage, and the Bash fallback.
 - [CLI reference](reference/cli.md): every command and option, generated from the tool's `--help` output.
 - [Uploading coverage to Codecov](guides/codecov-upload.md): public-repository prerequisites, PR tokenless uploads, default-branch OIDC, and profile-specific coverage reports.

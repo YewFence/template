@@ -106,6 +106,7 @@ Editable sources live in `shared/` and `overlays/`; `templates/<name>/` holds th
 
 ## Documentation
 
+- [Agent skill](skills/use-template/SKILL.md) — hand the whole flow to a coding agent: profile and capability selection, instantiation, conflict resolution, and bootstrap to a passing check
 - [Usage guide](docs/guides/use-template.md) — preconditions, conflict handling, non-interactive usage, and the Bash fallback
 - [CLI reference](docs/reference/cli.md) — every command and option, generated from the tool's `--help` output
 - [crates.io publishing guide](docs/guides/rust-crates-io-publishing.md) and [container image publishing guide](docs/guides/go-cli-container-image-publishing.md) — for the respective capabilities
