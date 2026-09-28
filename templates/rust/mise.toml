@@ -87,10 +87,11 @@ run = "typos --write-changes"
 
 [tasks."newline:check"]
 description = "Check final newlines and surrounding whitespace in tracked text files"
+shell = "bash -c"
 run = '''
 set -o pipefail
 if jj root >/dev/null 2>&1; then
-    jj --ignore-working-copy file list | xargs -d '\n' nllint --trim-space
+    jj --ignore-working-copy file list -T 'path ++ "\0"' | xargs -0 nllint --trim-space
 else
     git grep -Ilz '' -- . {{ vars.nllint_excludes }} | xargs -0 nllint --trim-space
 fi
@@ -98,10 +99,11 @@ fi
 
 [tasks."newline:fix"]
 description = "Fix final newlines and surrounding whitespace in tracked text files"
+shell = "bash -c"
 run = '''
 set -o pipefail
 if jj root >/dev/null 2>&1; then
-    jj --ignore-working-copy file list | xargs -d '\n' nllint --fix --trim-space
+    jj --ignore-working-copy file list -T 'path ++ "\0"' | xargs -0 nllint --fix --trim-space
 else
     git grep -Ilz '' -- . {{ vars.nllint_excludes }} | xargs -0 nllint --fix --trim-space
 fi

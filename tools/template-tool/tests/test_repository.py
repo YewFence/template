@@ -659,6 +659,25 @@ class TestTemplateRepository:
             TemplateRepository(self.root).render("example")
 
     @pytest.mark.parametrize("template", ("common", "python", "go-cli", "rust"))
+    @pytest.mark.parametrize("task_name", ("newline:check", "newline:fix"))
+    def test_newline_tasks_use_bash_and_nul_delimited_paths(
+        self, template: str, task_name: str
+    ) -> None:
+        repository = TemplateRepository(Path(__file__).resolve().parents[3])
+        output = self.output_root / template
+        repository.render_to(template, output, enabled_capabilities=())
+        task = tomllib.loads((output / "mise.toml").read_text())["tasks"][task_name]
+
+        assert task["shell"] == "bash -c"
+        assert "set -o pipefail" in task["run"]
+        fix_option = "--fix " if task_name == "newline:fix" else ""
+        assert (
+            'jj --ignore-working-copy file list -T \'path ++ "\\0"\' | '
+            f"xargs -0 nllint {fix_option}--trim-space"
+        ) in task["run"]
+        assert "xargs -d" not in task["run"]
+
+    @pytest.mark.parametrize("template", ("common", "python", "go-cli", "rust"))
     @pytest.mark.parametrize("capabilities_enabled", (False, True))
     def test_release_workflow_uses_shared_gh_adapter(
         self, template: str, capabilities_enabled: bool
