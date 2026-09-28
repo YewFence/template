@@ -128,7 +128,7 @@ def validate(context: StagingContext) -> None:
     context = context.with_environment(MISE_LOCKED=None)
     context.mise("-C", str(context.template_root), "-E", "ci", "lock")
     context = context.with_environment(MISE_LOCKED="1")
-    context.mise("-C", str(context.template_root), "install", "--locked")
+    context.mise("-C", str(context.template_root), "-E", "ci", "install", "--locked")
     context.mise("-C", str(context.template_root), "run", "deps:update")
     if context.has_capability("container-image-publish"):
         context.mise("-C", str(context.template_root), "-E", "ci", "run", "container:build")

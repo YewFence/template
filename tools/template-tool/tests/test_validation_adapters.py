@@ -4,7 +4,12 @@ import subprocess
 
 import pytest
 
-from staging_harness import REPOSITORY_ROOT, AdapterFailure, StagingHarness
+from staging_harness import (
+    PROFILE_CAPABILITIES,
+    REPOSITORY_ROOT,
+    AdapterFailure,
+    StagingHarness,
+)
 
 
 class TestValidationAdapter(StagingHarness):
@@ -60,6 +65,29 @@ class TestValidationAdapter(StagingHarness):
             assert completed.returncode == 0, completed.stderr
             calls = (root / "mise-calls").read_text(encoding="utf-8").splitlines()
             assert "run check" in calls
+
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
+    @pytest.mark.parametrize("all_capabilities", (False, True))
+    def test_ci_tools_are_installed_before_project_validation(
+        self, profile: str, all_capabilities: bool
+    ) -> None:
+        capabilities = PROFILE_CAPABILITIES[profile] if all_capabilities else ()
+        calls = self.run_adapter(profile, capabilities)
+
+        lock_index = calls.index("-E ci lock")
+        install_index = calls.index("-E ci install --locked")
+        assert lock_index < install_index < calls.index("run deps:update")
+        assert install_index < calls.index("run check")
+        for task in ("audit", "container:build", "crates-io:package:check"):
+            if f"run {task}" in calls:
+                assert install_index < calls.index(f"run {task}")
+
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
+    def test_monorepo_ci_checks_template(self, profile: str) -> None:
+        workflow = (REPOSITORY_ROOT / ".github/workflows/ci.yml").read_text(
+            encoding="utf-8"
+        )
+        assert f"        run: mise run check {profile}\n" in workflow
 
     @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
     def test_docs_site_disabled_skips_documentation_toolchain(self, profile: str) -> None:
