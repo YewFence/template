@@ -1,6 +1,6 @@
 # Monorepo 架构
 
-本仓库是 `common`、`go-cli` 和 `rust` 三个工程模板的唯一事实来源。维护者编辑共享来源和模板专属来源，renderer 生成完整、自包含的 template deliverable（模板交付物）；生成项目在运行时不依赖本 monorepo。
+本仓库是 `common`、`python`、`go-cli` 和 `rust` 四个工程模板的唯一事实来源。维护者编辑共享来源和模板专属来源，renderer 生成完整、自包含的 template deliverable（模板交付物）；生成项目在运行时不依赖本 monorepo。
 
 相关架构取舍记录在 [`docs/adr/`](../adr/) 中。早期历史文档已在公开发布前移除，可通过 Git 历史追溯；已撤销的方案不构成有效合同。
 
@@ -67,7 +67,7 @@ mise tasks info //overlays/common:check
 mise run //overlays/common:check /tmp/staging/common
 ```
 
-对应的 Go CLI 和 Rust task 分别是 `//overlays/go-cli:check` 与 `//overlays/rust:check`。这些 task 只接收 staging template root，并从 `TEMPLATE_TOOL_ENABLED_CAPABILITIES` 读取当前 case；完整 capability matrix 和 disposable staging 生命周期仍由 `template-tool` 的根 `check` task 管理。adapter 的共享 capability parser、命令 context 和合同断言位于 `tools/template-tool/src/template_tool/staging_validation/`，profile-specific 行为位于对应的 `overlays/<name>/validation/check.py`。
+对应的 Python、Go CLI 和 Rust task 分别是 `//overlays/python:check`、`//overlays/go-cli:check` 与 `//overlays/rust:check`。这些 task 只接收 staging template root，并从 `TEMPLATE_TOOL_ENABLED_CAPABILITIES` 读取当前 case；完整 capability matrix 和 disposable staging 生命周期仍由 `template-tool` 的根 `check` task 管理。adapter 的共享 capability parser、命令 context 和合同断言位于 `tools/template-tool/src/template_tool/staging_validation/`，profile-specific 行为位于对应的 `overlays/<name>/validation/check.py`。
 
 `render` 从声明式来源重新生成一个或全部 profile 的默认 capability 集合 preview。写入采用 staging 和原子替换，并保留普通文件的 executable bit、路径边界与 symlink 安全约束。
 
@@ -88,7 +88,7 @@ monorepo 自身的维护环境与模板交付物分离。根 `mise.lock`、`tool
 
 ## Staging Validation
 
-`mise run check [template]` 验证实例化后的真实项目行为，但不修改来源或 template deliverable preview。它为每个 profile 自动展开适用 capabilities 的完整布尔笛卡尔积；当前共运行 20 个 cases：`common` 验证 `docs-site` 与 `codecov-upload` 的四种组合，`go-cli` 验证 `docs-site`、`container-image-publish` 与 `codecov-upload` 的八种组合，`rust` 验证 `docs-site`、`crates-io-publish` 与 `codecov-upload` 的八种组合。
+`mise run check [template]` 验证实例化后的真实项目行为，但不修改来源或 template deliverable preview。它为每个 profile 自动展开适用 capabilities 的完整布尔笛卡尔积；当前共运行 24 个 cases：`common` 与 `python` 分别验证 `docs-site` 和 `codecov-upload` 的四种组合，`go-cli` 验证 `docs-site`、`container-image-publish` 与 `codecov-upload` 的八种组合，`rust` 验证 `docs-site`、`crates-io-publish` 与 `codecov-upload` 的八种组合。
 
 1. 共享模板准备内核验证完整 profile 合同、解析 case 的 effective capability set，并在隔离 destination 渲染未实例化 blueprint。
 2. 工具读取 `templates.toml` 中固定的 validation metadata，复用正式 project instantiation 引擎替换内容和路径 token。

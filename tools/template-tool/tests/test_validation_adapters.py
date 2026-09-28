@@ -18,6 +18,16 @@ class TestValidationAdapter(StagingHarness):
         )
         assert "Usage: //overlays/common:check <template_root>" in completed.stdout
 
+    def test_python_namespaced_task_is_discoverable(self) -> None:
+        completed = subprocess.run(
+            ["mise", "run", "//overlays/python:check", "--help"],
+            cwd=REPOSITORY_ROOT,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        assert "Usage: //overlays/python:check <template_root>" in completed.stdout
+
     def test_go_cli_namespaced_task_is_discoverable(self) -> None:
         completed = subprocess.run(
             ["mise", "run", "//overlays/go-cli:check", "--help"],
@@ -51,14 +61,14 @@ class TestValidationAdapter(StagingHarness):
             calls = (root / "mise-calls").read_text(encoding="utf-8").splitlines()
             assert "run check" in calls
 
-    @pytest.mark.parametrize("profile", ("common", "go-cli", "rust"))
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
     def test_docs_site_disabled_skips_documentation_toolchain(self, profile: str) -> None:
         calls = self.run_adapter(profile, ())
 
         assert "run docs:lock" not in calls
         assert "run docs:build" not in calls
 
-    @pytest.mark.parametrize("profile", ("common", "go-cli", "rust"))
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
     def test_docs_site_enabled_locks_and_builds_documentation(self, profile: str) -> None:
         calls = self.run_adapter(profile, ("docs-site",))
 
@@ -85,12 +95,12 @@ class TestValidationAdapter(StagingHarness):
 
         assert "run container:build" not in calls
 
-    @pytest.mark.parametrize("profile", ("common", "go-cli", "rust"))
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
     def test_codecov_upload_enabled_validates_both_workflows(self, profile: str) -> None:
         calls = self.run_adapter(profile, ("codecov-upload",))
         assert "run actions:update" in calls
 
-    @pytest.mark.parametrize("profile", ("common", "go-cli", "rust"))
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
     def test_codecov_upload_disabled_skips_coverage_validation(self, profile: str) -> None:
         calls = self.run_adapter(profile, ())
         assert "run coverage" not in calls
@@ -110,6 +120,21 @@ class TestValidationAdapter(StagingHarness):
             )
             assert completed.returncode != 0
             assert "coverage placeholder contract is incomplete" in completed.stderr
+
+    def test_python_codecov_upload_requires_coverage_dependency(self) -> None:
+        with self.staged_repository("python", ("codecov-upload",)) as root:
+            pyproject = root / "template" / "pyproject.toml"
+            pyproject.write_text(
+                pyproject.read_text(encoding="utf-8").replace(
+                    'coverage = ["pytest-cov>=7,<8"]\n', ""
+                ),
+                encoding="utf-8",
+            )
+            completed = self.invoke_adapter(
+                root, "python", ("codecov-upload",), ("codecov-upload",)
+            )
+            assert completed.returncode != 0
+            assert "coverage dependency does not match codecov-upload" in completed.stderr
 
     def test_explicit_docs_site_state_rejects_mismatched_staged_project(self) -> None:
         with pytest.raises(AdapterFailure) as captured:
@@ -136,7 +161,7 @@ class TestValidationAdapter(StagingHarness):
             )
         assert "container-image-publish" in captured.value.stderr
 
-    @pytest.mark.parametrize("profile", ("common", "go-cli", "rust"))
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
     def test_explicit_codecov_upload_state_rejects_mismatched_staged_project(
         self,
         profile: str,

@@ -658,7 +658,7 @@ class TestTemplateRepository:
         with pytest.raises(TemplateError, match="contribution references undeclared capability"):
             TemplateRepository(self.root).render("example")
 
-    @pytest.mark.parametrize("template", ("common", "go-cli", "rust"))
+    @pytest.mark.parametrize("template", ("common", "python", "go-cli", "rust"))
     @pytest.mark.parametrize("capabilities_enabled", (False, True))
     def test_release_workflow_uses_shared_gh_adapter(
         self, template: str, capabilities_enabled: bool
@@ -678,13 +678,13 @@ class TestTemplateRepository:
             assert "group: github-release-${{ needs.version.outputs.tag }}" in workflow
             assert "RELEASE_COMMIT: ${{ needs.version.outputs.checkout_ref }}" in workflow
             assert "ALLOW_TAG_CREATION: ${{ needs.version.outputs.allow_tag_creation }}" in workflow
-            assert ("RELEASE_ASSET_DIR: dist" in workflow) is (template != "common")
+            assert ("RELEASE_ASSET_DIR: dist" in workflow) is (template in {"go-cli", "rust"})
             assert "softprops/action-gh-release" not in workflow
             assert "git push" not in workflow
             assert "release:tag:create" not in ci_tasks
             assert "release:tag" in ci_tasks
 
-    @pytest.mark.parametrize("template", ("common", "go-cli", "rust"))
+    @pytest.mark.parametrize("template", ("common", "python", "go-cli", "rust"))
     @pytest.mark.parametrize("docs_enabled", (False, True))
     def test_action_versions_workflow_is_separate_from_ci(
         self, template: str, docs_enabled: bool
@@ -719,7 +719,7 @@ class TestTemplateRepository:
 
         with tempfile.TemporaryDirectory() as temporary:
             output_root = Path(temporary)
-            for template in ("common", "go-cli", "rust"):
+            for template in ("common", "python", "go-cli", "rust"):
                 enabled_capabilities = repository.resolve_capabilities(template)
                 disabled_capabilities = tuple(
                     capability
@@ -809,6 +809,7 @@ class TestTemplateRepository:
         repository = TemplateRepository(repository_root)
         reports = {
             "common": "coverage.xml",
+            "python": "coverage.xml",
             "go-cli": "coverage.out",
             "rust": "lcov.info",
         }
@@ -879,7 +880,7 @@ class TestTemplateRepository:
 
         with tempfile.TemporaryDirectory() as temporary:
             output_root = Path(temporary)
-            for template in ("common", "go-cli", "rust"):
+            for template in ("common", "python", "go-cli", "rust"):
                 metadata = repository.export_metadata(template)
                 if template == "rust":
                     metadata["description"] = 'Replace "this" description'
@@ -900,6 +901,10 @@ class TestTemplateRepository:
                             continue
                         assert not re.search(r"\{\{[A-Z]", content)
 
+                if template == "python":
+                    assert (output / "src/replace_me_package/__init__.py").is_file()
+                    pyproject = (output / "pyproject.toml").read_text(encoding="utf-8")
+                    assert 'packages = ["src/replace_me_package"]' in pyproject
                 if template == "go-cli":
                     assert (output / "cmd/replace-me-binary/main.go").is_file()
                     assert ((output / "go.mod").read_text(encoding="utf-8").splitlines()[0]) == ("module example.invalid/replace-me-module")
@@ -910,6 +915,48 @@ class TestTemplateRepository:
                     assert ('description = "Replace \\"this\\" description"') in (cargo)
                     assert ("replace_me_package::greeting") in (main)
                     assert ('text: "Replace \\"this\\" description"') in (docs)
+
+    def test_python_profile_renders_language_toolchain_and_package(self) -> None:
+        repository_root = Path(__file__).resolve().parents[3]
+        repository = TemplateRepository(repository_root)
+        metadata = repository.validation_metadata("python")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output_root = Path(temporary)
+            disabled = output_root / "disabled"
+            enabled = output_root / "enabled"
+            repository.render_to("python", disabled, enabled_capabilities=())
+            repository.render_to(
+                "python",
+                enabled,
+                enabled_capabilities=("codecov-upload",),
+            )
+            repository.instantiate("python", disabled, metadata)
+            repository.instantiate("python", enabled, metadata)
+
+            mise = tomllib.loads((disabled / "mise.toml").read_text())
+            assert mise["tools"]["python"] == "3"
+            assert mise["tools"]["uv"] == "0"
+            assert mise["tools"]["ruff"] == "0.16"
+            assert mise["tools"]["ty"] == "0.0"
+            assert mise["tasks"]["lint"]["run"] == ["ruff check .", "ty check"]
+
+            pyproject = tomllib.loads((disabled / "pyproject.toml").read_text())
+            assert pyproject["project"]["name"] == "example-python-project"
+            assert pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"] == [
+                "src/example_python_project"
+            ]
+            assert "coverage" not in pyproject["dependency-groups"]
+            assert (disabled / "src/example_python_project/__init__.py").is_file()
+            assert (disabled / "tests/test_package.py").is_file()
+
+            enabled_pyproject = tomllib.loads((enabled / "pyproject.toml").read_text())
+            assert enabled_pyproject["dependency-groups"]["coverage"] == [
+                "pytest-cov>=7,<8"
+            ]
+            assert "--cov=example_python_project" in (
+                enabled / "mise.toml"
+            ).read_text()
 
     def test_rust_crates_io_publish_capability_renders_complete_variants(self) -> None:
         repository_root = Path(__file__).resolve().parents[3]

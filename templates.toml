@@ -75,6 +75,76 @@ hints = [
  [templates.common.slots.".github/workflows/release.yml"]
  release_needs = ["shared:workflows/release/version-only.j2"]
 
+[templates.python]
+ [templates.python.capabilities]
+ docs-site = true
+ codecov-upload = false
+ [templates.python.instantiation]
+ required = ["project_name", "description", "github_owner", "repo_name", "python_package"]
+ [templates.python.instantiation.tokens]
+ PROJECT_NAME = "project_name"
+ PROJECT_DESCRIPTION = "description"
+ GITHUB_OWNER = "github_owner"
+ REPO_NAME = "repo_name"
+ PYTHON_PACKAGE = "python_package"
+ [templates.python.instantiation.derived.PROJECT_DESCRIPTION_JSON]
+ source = "description"
+ transform = "json-string"
+ [templates.python.instantiation.derived.PROJECT_NAME_JSON]
+ source = "project_name"
+ transform = "json-string"
+ [templates.python.instantiation.derived.PROJECT_DESCRIPTION_TOML]
+ source = "description"
+ transform = "toml-basic-string"
+ [templates.python.instantiation.validation.metadata]
+ project_name = "Example Python Project"
+ description = "Example Python project description"
+ github_owner = "YewFence"
+ repo_name = "example-python-project"
+ python_package = "example_python_project"
+ [templates.python.instantiation.export.metadata]
+ project_name = "REPLACE ME: project name"
+ description = "REPLACE ME: project description"
+ github_owner = "replace-me-owner"
+ repo_name = "replace-me-repository"
+ python_package = "replace_me_package"
+ [templates.python.slots."mise.ci.toml"]
+ audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
+ coverage_tools = { capability = "codecov-upload", fragments = ["shared:mise/ci/codecov-tools.toml.j2"] }
+ release_package = ["shared:mise/ci/common-package.toml.j2"]
+ [templates.python.slots."pyproject.toml"]
+ coverage_dependency = { capability = "codecov-upload", fragments = ["overlay:pyproject/coverage-dependency.toml.j2"] }
+ [templates.python.slots."mise.toml"]
+ docs_tools = { capability = "docs-site", fragments = ["shared:mise/docs-tools.toml.j2"] }
+ docs_tasks = { capability = "docs-site", fragments = ["shared:mise/docs-tasks.toml.j2"] }
+ coverage_task = { capability = "codecov-upload", fragments = ["overlay:mise/coverage.toml.j2"] }
+ [templates.python.slots."README.md"]
+ docs_badge = { capability = "docs-site", fragments = ["shared:docs/README.md.j2"] }
+ docs_section = { capability = "docs-site", fragments = ["shared:docs/README-section.md.j2"] }
+ [templates.python.slots."CONTRIBUTING.md"]
+ project_principles = ["overlay:contributing/project-principles.md.j2"]
+ audit_command = ["overlay:contributing/audit-command.md.j2"]
+ docs_section = { capability = "docs-site", fragments = ["shared:docs/CONTRIBUTING-section.md.j2"] }
+ [templates.python.slots.".gitignore"]
+ project_ignored_paths = ["overlay:gitignore/project-ignored-paths.j2"]
+ docs_ignored_paths = { capability = "docs-site", fragments = ["shared:docs-ignored-paths.j2"] }
+ coverage_ignored_paths = { capability = "codecov-upload", fragments = ["overlay:gitignore/coverage.j2"] }
+ [templates.python.slots.".github/workflows/ci.yml"]
+ docs_job = { capability = "docs-site", fragments = ["shared:workflows/docs/docs-job.yml.j2"] }
+ coverage_job = { capability = "codecov-upload", fragments = ["shared:workflows/coverage/pr-prefix.yml.j2", "overlay:workflows/ci/coverage-job.yml.j2", "shared:workflows/coverage/pr-suffix.yml.j2"] }
+ [templates.python.capability_outputs]
+ docs-site = ["docs/", ".github/workflows/docs.yml"]
+ codecov-upload = [".github/workflows/coverage.yml"]
+ [templates.python.slots.".github/workflows/coverage.yml"]
+ coverage_job = { capability = "codecov-upload", fragments = ["shared:workflows/coverage/default-prefix.yml.j2", "overlay:workflows/ci/coverage-job.yml.j2", "shared:workflows/coverage/default-suffix.yml.j2"] }
+ [templates.python.slots.".github/workflows/audit.yml"]
+ audit_paths = ["overlay:workflows/audit/paths.yml.j2"]
+ [templates.python.slots.".github/workflows/prepare-release.yml"]
+ release_install_args = ["shared:workflows/prepare-release/install-args.j2"]
+ release_files = ["shared:workflows/prepare-release/files.j2"]
+ [templates.python.slots.".github/workflows/release.yml"]
+ release_needs = ["shared:workflows/release/version-only.j2"]
+
 [templates.go-cli]
  [templates.go-cli.capabilities]
  docs-site = true

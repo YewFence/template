@@ -1,12 +1,12 @@
 # YewFence Project Templates
 
-Project templates for bootstrapping new repositories: a language-agnostic base, a Go CLI, and a Rust CLI. Each template renders a complete project — mise toolchain and tasks, GitHub Actions CI, release automation, and an optional docs site — instantiated for your project identity by a single CLI command.
+Project templates for bootstrapping new repositories: a language-agnostic base, a Python project, a Go CLI, and a Rust CLI. Each template renders a complete project — mise toolchain and tasks, GitHub Actions CI, release automation, and an optional docs site — instantiated for your project identity by a single CLI command.
 
 ## Features
 
 | Feature | Description |
 | --- | --- |
-| Project templates | Three profiles — `common` (language-agnostic), `go-cli` (Go + Cobra), and `rust` (Rust CLI) — each with its own optional capabilities |
+| Project templates | Four profiles — `common` (language-agnostic), `python` (uv + Ruff + ty), `go-cli` (Go + Cobra), and `rust` (Rust CLI) — each with its own optional capabilities |
 | One-command instantiation | `init-project` interactively collects capabilities and metadata, creates the initial commit, and stages your project |
 | Toolchain management | Every development tool is managed through mise and locked per project |
 | Task runner | Ready-made mise tasks: `check`, `fix`, `build`, `test`, `deps:update`, `hooks:install`, and more |
@@ -22,6 +22,7 @@ Project templates for bootstrapping new repositories: a language-agnostic base, 
 | Template | Purpose | Notable capabilities |
 | --- | --- | --- |
 | [`common`](overlays/common/README.md) | Language-agnostic starting point with full repository automation | `docs-site`, `codecov-upload` |
+| [`python`](overlays/python/README.md) | Python src-layout project with uv, Ruff, ty, and pytest | `docs-site`, `codecov-upload` |
 | [`go-cli`](overlays/go-cli/README.md) | Go CLI with a Cobra skeleton and multi-platform builds | plus `container-image-publish` (ko → GHCR) |
 | [`rust`](overlays/rust/README.md) | Rust CLI with a locked-by-default Cargo workflow | plus `crates-io-publish` (trusted publishing) |
 

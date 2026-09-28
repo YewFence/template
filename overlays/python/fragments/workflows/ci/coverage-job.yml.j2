@@ -1,0 +1,6 @@
+
+    - name: Generate coverage report
+      id: coverage
+      run: |
+        mise run coverage
+        echo "report=coverage.xml" >> "$GITHUB_OUTPUT"

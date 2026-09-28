@@ -1,6 +1,6 @@
 # Uploading Coverage to Codecov
 
-The optional `codecov-upload` template capability adds a `mise run coverage` task and Codecov uploads for pull requests and the default branch. It is disabled by default for the `common`, `go-cli`, and `rust` template profiles.
+The optional `codecov-upload` template capability adds a `mise run coverage` task and Codecov uploads for pull requests and the default branch. It is disabled by default for the `common`, `python`, `go-cli`, and `rust` template profiles.
 
 ## Prerequisites
 

@@ -153,7 +153,7 @@ def _selection_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--template",
         required=True,
-        help="template profile declared in templates.toml (e.g. common, go-cli, rust)",
+        help="template profile declared in templates.toml (e.g. common, python, go-cli, rust)",
     )
     parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
 
@@ -163,6 +163,7 @@ def _metadata_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--description", help="one-line project description (metadata field: description)")
     parser.add_argument("--github-owner", help="GitHub user or organization that will own the repository (metadata field: github_owner)")
     parser.add_argument("--repo-name", help="GitHub repository name (metadata field: repo_name)")
+    parser.add_argument("--python-package", help="importable package identifier; python template only (metadata field: python_package)")
     parser.add_argument("--go-module", help="Go module path; go-cli template only (metadata field: go_module)")
     parser.add_argument("--cargo-package", help="Cargo package name; rust template only (metadata field: cargo_package)")
     parser.add_argument("--binary-name", help="name of the compiled binary; go-cli and rust templates only (metadata field: binary_name)")
@@ -621,6 +622,7 @@ def _metadata_from_args(args: argparse.Namespace) -> dict[str, str]:
             "description": args.description,
             "github_owner": args.github_owner,
             "repo_name": args.repo_name,
+            "python_package": args.python_package,
             "go_module": args.go_module,
             "cargo_package": args.cargo_package,
             "binary_name": args.binary_name,

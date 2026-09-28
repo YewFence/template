@@ -24,6 +24,7 @@ REPOSITORY_ROOT = Path(__file__).parents[3]
 
 PROFILE_CAPABILITIES: dict[str, tuple[str, ...]] = {
     "common": ("codecov-upload", "docs-site"),
+    "python": ("codecov-upload", "docs-site"),
     "go-cli": ("codecov-upload", "container-image-publish", "docs-site"),
     "rust": ("codecov-upload", "crates-io-publish", "docs-site"),
 }
@@ -280,11 +281,41 @@ class StagingHarness:
             "\n".join(release_lines) + "\n", encoding="utf-8"
         )
         tool_lines = ["[tools]", 'python = "3.14"']
+        if profile == "python":
+            tool_lines.extend(('uv = "0"', 'ruff = "0.16"', 'ty = "0.0"'))
         if docs_enabled:
             tool_lines.extend(('node = "26"', 'pnpm = "11"'))
         (template_root / "mise.toml").write_text(
             "\n".join(tool_lines) + "\n", encoding="utf-8"
         )
+        if profile == "python":
+            package = template_root / "src/example_python_project"
+            package.mkdir(parents=True)
+            (package / "__init__.py").write_text('"""Example package."""\n', encoding="utf-8")
+            tests = template_root / "tests"
+            tests.mkdir()
+            (tests / "test_package.py").write_text(
+                "def test_package():\n    assert True\n", encoding="utf-8"
+            )
+            coverage_group = (
+                '\ncoverage = ["pytest-cov>=7,<8"]' if codecov_enabled else ""
+            )
+            (template_root / "pyproject.toml").write_text(
+                "[project]\n"
+                'name = "example-python-project"\n'
+                'version = "0.1.0"\n'
+                'requires-python = ">=3.12"\n'
+                "dependencies = []\n\n"
+                "[dependency-groups]\n"
+                'dev = ["pytest>=9,<10"]'
+                f"{coverage_group}\n\n"
+                "[build-system]\n"
+                'requires = ["hatchling>=1,<2"]\n'
+                'build-backend = "hatchling.build"\n\n'
+                "[tool.hatch.build.targets.wheel]\n"
+                'packages = ["src/example_python_project"]\n',
+                encoding="utf-8",
+            )
         if codecov_enabled:
             with (template_root / "mise.toml").open("a", encoding="utf-8") as handle:
                 if profile == "common":
@@ -321,7 +352,12 @@ class StagingHarness:
             "\n".join(ci_tool_lines) + "\n", encoding="utf-8"
         )
         if codecov_enabled:
-            report = {"common": "coverage.xml", "go-cli": "coverage.out", "rust": "lcov.info"}[profile]
+            report = {
+                "common": "coverage.xml",
+                "python": "coverage.xml",
+                "go-cli": "coverage.out",
+                "rust": "lcov.info",
+            }[profile]
             (template_root / ".gitignore").write_text(f"/{report}\n", encoding="utf-8")
         (template_root / "tracked").write_text("tracked\n", encoding="utf-8")
 
@@ -355,6 +391,21 @@ class StagingHarness:
         enabled_capabilities: tuple[str, ...],
     ) -> dict[str, str]:
         tasks = ["actions:update", "check", "deps:update"]
+        if profile == "python":
+            tasks.extend(
+                (
+                    "audit",
+                    "build",
+                    "build:check",
+                    "deps:check",
+                    "deps:fix",
+                    "fmt:check",
+                    "fmt:fix",
+                    "lint",
+                    "lint:fix",
+                    "test",
+                )
+            )
         if "codecov-upload" in enabled_capabilities:
             tasks.append("coverage")
         if "docs-site" in enabled_capabilities:

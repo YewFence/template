@@ -195,6 +195,7 @@ class TestTemplateCheck:
                 "description": None,
                 "github_owner": "YewFence",
                 "repo_name": None,
+                "python_package": None,
                 "go_module": None,
                 "cargo_package": None,
                 "binary_name": None,

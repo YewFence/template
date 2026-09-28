@@ -23,10 +23,11 @@ Three decisions precede the run. The **profile** is yours to determine from the 
 | Profile | Shape signal | Extra metadata |
 | --- | --- | --- |
 | `common` | Language-agnostic repository automation; the user brings their own language tasks, which ship as `[PLACEHOLDER]` stubs | — |
+| `python` | Python src-layout project using uv, Ruff, ty, and pytest | `python_package` |
 | `go-cli` | Go CLI with a Cobra skeleton and multi-platform release builds | `go_module`, `binary_name` |
 | `rust` | Rust CLI with a locked-by-default Cargo workflow | `cargo_package`, `binary_name` |
 
-Read the target repository before asking anything. Existing language sources, module files, build manifests, and the git remote usually settle it: a Go module with a Cobra command tree is `go-cli`, a `Cargo.toml` is `rust`, a repository whose language tooling the templates do not own is `common`.
+Read the target repository before asking anything. Existing language sources, module files, build manifests, and the git remote usually settle it: a `pyproject.toml`-based Python project is `python`, a Go module with a Cobra command tree is `go-cli`, a `Cargo.toml` is `rust`, and a repository whose language tooling the templates do not own is `common`.
 
 Ask only when the evidence leaves two profiles plausible, and ask with your reading attached — "this looks like a Rust CLI, so `rust`; confirm?" beats an open question. A project that brings its own language tasks, which ship as `[PLACEHOLDER]` stubs, or uses a language none of these cover, is `common`.
 

@@ -18,7 +18,8 @@ uvx --from "git+https://github.com/YewFence/template.git@main#subdirectory=tools
 usage: init-project [-h] [--repo REPO] --ref REF --template TEMPLATE
                     [--project-name PROJECT_NAME] [--description DESCRIPTION]
                     [--github-owner GITHUB_OWNER] [--repo-name REPO_NAME]
-                    [--go-module GO_MODULE] [--cargo-package CARGO_PACKAGE]
+                    [--python-package PYTHON_PACKAGE] [--go-module GO_MODULE]
+                    [--cargo-package CARGO_PACKAGE]
                     [--binary-name BINARY_NAME]
                     [--enable-capability ENABLE_CAPABILITY]
                     [--disable-capability DISABLE_CAPABILITY] [--interactive]
@@ -48,7 +49,7 @@ options:
                         or a release tag; the template contract and renderer
                         always come from this ref
   --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, go-cli, rust)
+                        common, python, go-cli, rust)
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -59,6 +60,9 @@ options:
                         repository (metadata field: github_owner)
   --repo-name REPO_NAME
                         GitHub repository name (metadata field: repo_name)
+  --python-package PYTHON_PACKAGE
+                        importable package identifier; python template only
+                        (metadata field: python_package)
   --go-module GO_MODULE
                         Go module path; go-cli template only (metadata field:
                         go_module)
@@ -97,6 +101,7 @@ usage: apply-template [-h] [--repo REPO] --ref REF --template TEMPLATE
                       [--project-name PROJECT_NAME]
                       [--description DESCRIPTION]
                       [--github-owner GITHUB_OWNER] [--repo-name REPO_NAME]
+                      [--python-package PYTHON_PACKAGE]
                       [--go-module GO_MODULE] [--cargo-package CARGO_PACKAGE]
                       [--binary-name BINARY_NAME]
                       [--enable-capability ENABLE_CAPABILITY]
@@ -125,7 +130,7 @@ options:
                         or a release tag; the template contract and renderer
                         always come from this ref
   --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, go-cli, rust)
+                        common, python, go-cli, rust)
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -136,6 +141,9 @@ options:
                         repository (metadata field: github_owner)
   --repo-name REPO_NAME
                         GitHub repository name (metadata field: repo_name)
+  --python-package PYTHON_PACKAGE
+                        importable package identifier; python template only
+                        (metadata field: python_package)
   --go-module GO_MODULE
                         Go module path; go-cli template only (metadata field:
                         go_module)
@@ -175,6 +183,7 @@ usage: export-template [-h] [--repo REPO] --ref REF --template TEMPLATE
                        [--project-name PROJECT_NAME]
                        [--description DESCRIPTION]
                        [--github-owner GITHUB_OWNER] [--repo-name REPO_NAME]
+                       [--python-package PYTHON_PACKAGE]
                        [--go-module GO_MODULE] [--cargo-package CARGO_PACKAGE]
                        [--binary-name BINARY_NAME]
                        [--enable-capability ENABLE_CAPABILITY]
@@ -203,7 +212,7 @@ options:
                         or a release tag; the template contract and renderer
                         always come from this ref
   --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, go-cli, rust)
+                        common, python, go-cli, rust)
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -214,6 +223,9 @@ options:
                         repository (metadata field: github_owner)
   --repo-name REPO_NAME
                         GitHub repository name (metadata field: repo_name)
+  --python-package PYTHON_PACKAGE
+                        importable package identifier; python template only
+                        (metadata field: python_package)
   --go-module GO_MODULE
                         Go module path; go-cli template only (metadata field:
                         go_module)
@@ -258,7 +270,7 @@ options:
                        or a release tag; the template contract and renderer
                        always come from this ref
   --template TEMPLATE  template profile declared in templates.toml (e.g.
-                       common, go-cli, rust)
+                       common, python, go-cli, rust)
   --json               print the capability contract as a stable single-line
                        JSON object for scripting
 
@@ -373,7 +385,9 @@ usage: template-tool apply [-h] [--repo REPO] --ref REF --template TEMPLATE
                            [--project-name PROJECT_NAME]
                            [--description DESCRIPTION]
                            [--github-owner GITHUB_OWNER]
-                           [--repo-name REPO_NAME] [--go-module GO_MODULE]
+                           [--repo-name REPO_NAME]
+                           [--python-package PYTHON_PACKAGE]
+                           [--go-module GO_MODULE]
                            [--cargo-package CARGO_PACKAGE]
                            [--binary-name BINARY_NAME]
                            [--enable-capability ENABLE_CAPABILITY]
@@ -402,7 +416,7 @@ options:
                         or a release tag; the template contract and renderer
                         always come from this ref
   --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, go-cli, rust)
+                        common, python, go-cli, rust)
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -413,6 +427,9 @@ options:
                         repository (metadata field: github_owner)
   --repo-name REPO_NAME
                         GitHub repository name (metadata field: repo_name)
+  --python-package PYTHON_PACKAGE
+                        importable package identifier; python template only
+                        (metadata field: python_package)
   --go-module GO_MODULE
                         Go module path; go-cli template only (metadata field:
                         go_module)
@@ -452,7 +469,9 @@ usage: template-tool init [-h] [--repo REPO] --ref REF --template TEMPLATE
                           [--project-name PROJECT_NAME]
                           [--description DESCRIPTION]
                           [--github-owner GITHUB_OWNER]
-                          [--repo-name REPO_NAME] [--go-module GO_MODULE]
+                          [--repo-name REPO_NAME]
+                          [--python-package PYTHON_PACKAGE]
+                          [--go-module GO_MODULE]
                           [--cargo-package CARGO_PACKAGE]
                           [--binary-name BINARY_NAME]
                           [--enable-capability ENABLE_CAPABILITY]
@@ -483,7 +502,7 @@ options:
                         or a release tag; the template contract and renderer
                         always come from this ref
   --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, go-cli, rust)
+                        common, python, go-cli, rust)
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -494,6 +513,9 @@ options:
                         repository (metadata field: github_owner)
   --repo-name REPO_NAME
                         GitHub repository name (metadata field: repo_name)
+  --python-package PYTHON_PACKAGE
+                        importable package identifier; python template only
+                        (metadata field: python_package)
   --go-module GO_MODULE
                         Go module path; go-cli template only (metadata field:
                         go_module)
@@ -532,7 +554,9 @@ usage: template-tool export [-h] [--repo REPO] --ref REF --template TEMPLATE
                             [--project-name PROJECT_NAME]
                             [--description DESCRIPTION]
                             [--github-owner GITHUB_OWNER]
-                            [--repo-name REPO_NAME] [--go-module GO_MODULE]
+                            [--repo-name REPO_NAME]
+                            [--python-package PYTHON_PACKAGE]
+                            [--go-module GO_MODULE]
                             [--cargo-package CARGO_PACKAGE]
                             [--binary-name BINARY_NAME]
                             [--enable-capability ENABLE_CAPABILITY]
@@ -561,7 +585,7 @@ options:
                         or a release tag; the template contract and renderer
                         always come from this ref
   --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, go-cli, rust)
+                        common, python, go-cli, rust)
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -572,6 +596,9 @@ options:
                         repository (metadata field: github_owner)
   --repo-name REPO_NAME
                         GitHub repository name (metadata field: repo_name)
+  --python-package PYTHON_PACKAGE
+                        importable package identifier; python template only
+                        (metadata field: python_package)
   --go-module GO_MODULE
                         Go module path; go-cli template only (metadata field:
                         go_module)
@@ -616,7 +643,7 @@ options:
                        or a release tag; the template contract and renderer
                        always come from this ref
   --template TEMPLATE  template profile declared in templates.toml (e.g.
-                       common, go-cli, rust)
+                       common, python, go-cli, rust)
   --json               print the capability contract as a stable single-line
                        JSON object for scripting
 

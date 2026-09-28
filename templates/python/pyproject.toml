@@ -1,0 +1,20 @@
+[project]
+name = "{{REPO_NAME}}"
+version = "0.1.0"
+description = {{PROJECT_DESCRIPTION_TOML}}
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=9,<10"]
+
+[build-system]
+requires = ["hatchling>=1,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/{{PYTHON_PACKAGE}}"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

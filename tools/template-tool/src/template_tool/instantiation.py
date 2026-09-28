@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import keyword
 import os
 import re
 import shutil
@@ -14,12 +15,14 @@ CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 UPPERCASE_TOKEN_PATTERN = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
 GITHUB_OWNER_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?")
 GITHUB_REPOSITORY_PATTERN = re.compile(r"[A-Za-z0-9._-]+")
+PYTHON_PACKAGE_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 SUPPORTED_METADATA_FIELDS = frozenset(
     {
         "project_name",
         "description",
         "github_owner",
         "repo_name",
+        "python_package",
         "go_module",
         "cargo_package",
         "binary_name",
@@ -69,6 +72,12 @@ def validate_metadata_value(field: str, value: str) -> None:
     if field == "repo_name" and not GITHUB_REPOSITORY_PATTERN.fullmatch(value):
         raise InstantiationError(
             "metadata field 'repo_name' must be a valid GitHub repository name"
+        )
+    if field == "python_package" and (
+        not PYTHON_PACKAGE_PATTERN.fullmatch(value) or keyword.iskeyword(value)
+    ):
+        raise InstantiationError(
+            "metadata field 'python_package' must be a valid Python package identifier"
         )
 
 

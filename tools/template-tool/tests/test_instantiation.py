@@ -58,3 +58,7 @@ class TestInstantiation:
             validate_metadata_value("github_owner", "YewFence/")
         with pytest.raises(InstantiationError, match="valid GitHub repository"):
             validate_metadata_value("repo_name", "example/repository")
+        with pytest.raises(InstantiationError, match="valid Python package identifier"):
+            validate_metadata_value("python_package", "example-package")
+        with pytest.raises(InstantiationError, match="valid Python package identifier"):
+            validate_metadata_value("python_package", "class")

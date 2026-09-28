@@ -1,0 +1,3 @@
+[tasks.coverage]
+description = "Generate coverage.xml for Codecov upload"
+run = "uv run --locked --group coverage pytest --cov={{PYTHON_PACKAGE}} --cov-report=xml:coverage.xml"

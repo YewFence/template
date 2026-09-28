@@ -2,7 +2,7 @@
 
 ## 仓库用途
 
-这个仓库维护 `common`、`go-cli` 和 `rust` 三个工程模板，以及渲染、实例化、验证和应用这些模板所需的维护基础设施。
+这个仓库维护 `common`、`python`、`go-cli` 和 `rust` 四个工程模板，以及渲染、实例化、验证和应用这些模板所需的维护基础设施。
 
 它不是某个生成项目本身。根 `AGENTS.md` 面向 monorepo 维护者；`overlays/<name>/static/AGENTS.md` 才是对应 template deliverable（模板交付物）中的项目规则，并会进入 `templates/<name>/AGENTS.md`。不要把根维护规则渲染进生成项目，也不要用生成项目的规则替代本文件。
 

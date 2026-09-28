@@ -19,7 +19,7 @@ PINACT_GITHUB_TOKEN = { value = "${MISE_GITHUB_TOKEN:-}", redact = true }
 description = "Render one template or all templates"
 usage = '''
 arg "[template]" help="Template to render; defaults to all" {
-  choices "common" "go-cli" "rust"
+  choices "common" "python" "go-cli" "rust"
 }
 '''
 run = '''
@@ -30,7 +30,7 @@ uv run --project tools/template-tool render-template{% if usage.template %} "{{ 
 description = "Check one generated template or all generated templates"
 usage = '''
 arg "[template]" help="Template to check; defaults to all" {
-  choices "common" "go-cli" "rust"
+  choices "common" "python" "go-cli" "rust"
 }
 '''
 run = '''
@@ -41,7 +41,7 @@ uv run --project tools/template-tool render-template --check{% if usage.template
 description = "Run one template's checks or all template checks"
 usage = '''
 arg "[template]" help="Template to check; defaults to all" {
-  choices "common" "go-cli" "rust"
+  choices "common" "python" "go-cli" "rust"
 }
 '''
 run = '''
