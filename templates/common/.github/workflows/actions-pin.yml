@@ -1,4 +1,4 @@
-name: Action Versions
+name: Action Pinning
 
 on:
   push:
@@ -9,12 +9,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: actions-version-${{ github.workflow }}-${{ github.ref }}
+  group: actions-pin-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  actions-version:
-    name: Check Action Versions
+  actions-pin:
+    name: Check Action Pins
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
@@ -33,7 +33,7 @@ jobs:
           add_shims_to_path: true
           cache_key: "mise-actioncheck-{{install_args_hash}}-{{file_hash}}"
 
-      - name: Check Action versions
+      - name: Check Action pins
         env:
           PINACT_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: mise run actions:versions:check
+        run: mise run actions:pin:check

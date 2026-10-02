@@ -705,7 +705,7 @@ class TestTemplateRepository:
 
     @pytest.mark.parametrize("template", ("common", "python", "go-cli", "rust"))
     @pytest.mark.parametrize("docs_enabled", (False, True))
-    def test_action_versions_workflow_is_separate_from_ci(
+    def test_action_pins_workflow_is_separate_from_ci(
         self, template: str, docs_enabled: bool
     ) -> None:
         repository_root = Path(__file__).resolve().parents[3]
@@ -717,16 +717,19 @@ class TestTemplateRepository:
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / template
             repository.render_to(template, output, enabled_capabilities=capabilities)
-            workflow = (output / ".github/workflows/actions-version.yml").read_text()
+            workflow = (output / ".github/workflows/actions-pin.yml").read_text()
             ci = (output / ".github/workflows/ci.yml").read_text()
             mise = (output / "mise.toml").read_text()
+            mise_ci = (output / "mise.ci.toml").read_text()
 
             assert "on:\n  push:\n    branches: [main]\n  workflow_dispatch:\n" in workflow
             assert "if: github.ref == 'refs/heads/main'" in workflow
             assert "pull_request:" not in workflow
-            assert "run: mise run actions:versions:check" in workflow
-            assert "actions-version:" not in ci
-            assert "actions:versions:check" not in ci
+            assert "run: mise run actions:pin:check" in workflow
+            assert "actions-pin:" not in ci
+            assert "actions:pin:check" not in ci
+            assert "actions:outdated" not in mise_ci
+            assert "actions:versions:check" not in mise_ci
             assert "  pull_request:\n    branches: [main]" in ci
             assert "run: mise run check" in ci
             assert '{ task = "actions:check" }' in mise
