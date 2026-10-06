@@ -72,6 +72,12 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           cache_key: "mise-monorepo-{{file_hash}}"
 
+      # mise resolves `python = "3"` through python-build, which mise clones
+      # on first use. Concurrent resolution inside `mise run check python` races
+      # on that clone (mise 2026.10.0), so populate it serially first.
+      - name: Warm python-build cache
+        run: mise ls-remote python > /dev/null
+
       - name: Check template
         run: mise run check python
 
