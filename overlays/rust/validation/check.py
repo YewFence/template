@@ -53,6 +53,17 @@ def _validate_crates_io_publish(context: StagingContext) -> None:
             raise ValidationError("crates-io-publish disabled but release publish step remains")
 
 
+def _advance_baseline(context: StagingContext) -> None:
+    """Record generated state as HEAD so git-clean checks such as cargo package pass."""
+    root = str(context.template_root)
+    context.git("-C", root, "add", "--all")
+    tree = context.output(("git", "-C", root, "write-tree")).strip()
+    commit = context.output(
+        ("git", "-C", root, "commit-tree", tree, "-m", "template check state")
+    ).strip()
+    context.git("-C", root, "update-ref", "HEAD", commit)
+
+
 def validate(context: StagingContext) -> None:
     legacy = context.git(
         "-C",
@@ -88,6 +99,7 @@ def validate(context: StagingContext) -> None:
     if context.has_capability("docs-site"):
         context.mise("-C", str(context.template_root), "run", "docs:lock")
         context.mise("-C", str(context.template_root), "run", "docs:build")
+    _advance_baseline(context)
     if context.has_capability("crates-io-publish"):
         context.mise("-C", str(context.template_root), "-E", "ci", "run", "crates-io:package:check")
     context.mise("-C", str(context.template_root), "run", "actions:update")
