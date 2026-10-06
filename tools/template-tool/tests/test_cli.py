@@ -105,7 +105,7 @@ class TestTemplateCheck:
             in stderr.getvalue()
         )
 
-    def test_project_check_uses_external_git_environment_without_marker(
+    def test_project_check_baselines_in_tree_git_repository(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -161,7 +161,7 @@ class TestTemplateCheck:
                 "test \"$MISE_IGNORED_CONFIG_PATHS\" = '/tmp/mise-global:/tmp/existing-ignore'\n"
                 "test -f \"$template_root/docs.txt\"\n"
                 "test -f \"$template_root/release.txt\"\n"
-                "test ! -e \"$template_root/.git\"\n"
+                "test -d \"$template_root/.git\"\n"
                 "test \"$(git -C \"$template_root\" rev-parse --is-inside-work-tree)\" = true\n"
                 "test -z \"$(git -C \"$template_root\" ls-files cache)\"\n"
                 "git -C \"$template_root\" diff --quiet\n"

@@ -465,36 +465,49 @@ def _run_template_project_check(
         except ApplicationError as error:
             raise TemplateError(str(error)) from error
 
-        git_dir = Path(temporary) / "repo.git"
-        index = Path(temporary) / "index"
-        subprocess.run(["git", "init", "--bare", "--quiet", str(git_dir)], check=True)
-        subprocess.run(["git", "--git-dir", str(git_dir), "config", "core.bare", "false"], check=True)
-        subprocess.run(
-            ["git", "--git-dir", str(git_dir), "config", "core.worktree", str(template_root)],
-            check=True,
-        )
+        if os.path.lexists(template_root / ".git"):
+            raise TemplateError(f"generated template unexpectedly contains .git: {template_root}")
+
+        # Baseline an in-tree repository so staging checks see the same git
+        # context as a bootstrapped project (tools like typos only apply
+        # .gitignore inside a repo they can find on disk). The baseline is
+        # written with plumbing commands because `git commit` would also run
+        # hooks from the host's global `hook.*` config.
         template_environment = environment | {
             "GIT_AUTHOR_EMAIL": "template-tool@localhost",
             "GIT_AUTHOR_NAME": "template-tool",
             "GIT_COMMITTER_EMAIL": "template-tool@localhost",
             "GIT_COMMITTER_NAME": "template-tool",
-            "GIT_DIR": str(git_dir),
-            "GIT_INDEX_FILE": str(index),
-            "GIT_WORK_TREE": str(template_root),
             "MISE_TRUSTED_CONFIG_PATHS": str(template_root),
         }
-        subprocess.run(["git", "add", "--all"], cwd=template_root, env=template_environment, check=True)
+        subprocess.run(
+            ["git", "init", "--quiet", "--initial-branch", "main"],
+            cwd=template_root,
+            check=True,
+        )
+        subprocess.run(["git", "add", "--all"], cwd=template_root, check=True)
         tree = subprocess.run(
-            ["git", "write-tree"], cwd=template_root, env=template_environment, check=True,
-            text=True, capture_output=True,
+            ["git", "write-tree"],
+            cwd=template_root,
+            env=template_environment,
+            check=True,
+            text=True,
+            capture_output=True,
         ).stdout.strip()
         commit = subprocess.run(
             ["git", "commit-tree", tree, "-m", "template check baseline"],
-            cwd=template_root, env=template_environment, check=True, text=True, capture_output=True,
+            cwd=template_root,
+            env=template_environment,
+            check=True,
+            text=True,
+            capture_output=True,
         ).stdout.strip()
-        subprocess.run(["git", "update-ref", "HEAD", commit], cwd=template_root, env=template_environment, check=True)
-        if os.path.lexists(template_root / ".git"):
-            raise TemplateError(f"generated template unexpectedly contains .git: {template_root}")
+        subprocess.run(
+            ["git", "update-ref", "HEAD", commit],
+            cwd=template_root,
+            env=template_environment,
+            check=True,
+        )
 
         overlay_root = repository.overlays_root / template
         check_environment = template_environment | {
