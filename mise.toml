@@ -7,7 +7,7 @@ lockfile = true
 config_roots = ["overlays/*"]
 
 [tools]
-pinact = "4"
+pinact = "5"
 python = "3"
 uv = "0"
 
