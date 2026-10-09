@@ -12,6 +12,8 @@
   slot("container_image_tasks", optional=true) | trim,
   slot("crates_io_package_check", optional=true) | trim,
   slot("crates_io_publish_task", optional=true) | trim,
+  slot("npm_package_check", optional=true) | trim,
+  slot("npm_publish_task", optional=true) | trim,
 ] | reject("equalto", "") | join("\n\n") $>
 
 [tasks.'actions:pin:check']

@@ -1,6 +1,6 @@
 # Uploading Coverage to Codecov
 
-The optional `codecov-upload` template capability adds a `mise run coverage` task and Codecov uploads for pull requests and the default branch. It is disabled by default for the `common`, `python`, `go-cli`, and `rust` template profiles.
+The optional `codecov-upload` template capability adds a `mise run coverage` task and Codecov uploads for pull requests and the default branch. It is disabled by default for the `common`, `python`, `go-cli`, `rust`, and `node-project` template profiles.
 
 ## Prerequisites
 
@@ -31,8 +31,9 @@ The profile adapters generate these files in the repository root:
 | `common` | Placeholder that must be replaced with the project's coverage command | `coverage.xml` |
 | `go-cli` | `go test` with atomic coverage across all packages | `coverage.out` |
 | `rust` | `cargo llvm-cov` across the workspace and all features | `lcov.info` |
+| `node-project` | `vitest` with the v8 coverage provider | `coverage/lcov.info` |
 
-For a `common` project, replace the placeholder `coverage` task before expecting CI to pass. Go and Rust projects can use the supplied adapter or replace it with project-specific coverage behavior while preserving the report path expected by the workflow.
+For a `common` project, replace the placeholder `coverage` task before expecting CI to pass. Go, Rust, and Node projects can use the supplied adapter or replace it with project-specific coverage behavior while preserving the report path expected by the workflow.
 
 ## Bootstrap and Verify
 

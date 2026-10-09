@@ -198,6 +198,7 @@ class TestTemplateCheck:
                 "python_package": None,
                 "go_module": None,
                 "cargo_package": None,
+                "node_package": None,
                 "binary_name": None,
             },
         )()

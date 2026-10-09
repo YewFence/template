@@ -153,7 +153,7 @@ def _selection_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--template",
         required=True,
-        help="template profile declared in templates.toml (e.g. common, python, go-cli, rust)",
+        help="template profile declared in templates.toml (e.g. common, python, go-cli, rust, node-project)",
     )
     parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
 
@@ -166,6 +166,7 @@ def _metadata_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--python-package", help="importable package identifier; python template only (metadata field: python_package)")
     parser.add_argument("--go-module", help="Go module path; go-cli template only (metadata field: go_module)")
     parser.add_argument("--cargo-package", help="Cargo package name; rust template only (metadata field: cargo_package)")
+    parser.add_argument("--node-package", help="JavaScript source directory name under src/; node-project template only (metadata field: node_package)")
     parser.add_argument("--binary-name", help="name of the compiled binary; go-cli and rust templates only (metadata field: binary_name)")
 
 
@@ -638,6 +639,7 @@ def _metadata_from_args(args: argparse.Namespace) -> dict[str, str]:
             "python_package": args.python_package,
             "go_module": args.go_module,
             "cargo_package": args.cargo_package,
+            "node_package": args.node_package,
             "binary_name": args.binary_name,
         }.items()
         if value is not None
@@ -1078,7 +1080,7 @@ def main(argv: list[str] | None = None) -> None:
     args = umbrella_parser().parse_args(argv)
     if args.command == "apply":
         forwarded = [str(args.target), "--repo", args.repo, "--ref", args.ref, "--template", args.template]
-        for option in ("project-name", "description", "github-owner", "repo-name", "go-module", "cargo-package", "binary-name"):
+        for option in ("project-name", "description", "github-owner", "repo-name", "python-package", "go-module", "cargo-package", "node-package", "binary-name"):
             value = getattr(args, option.replace("-", "_"))
             if value is not None:
                 forwarded.extend([f"--{option}", value])
@@ -1096,7 +1098,7 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "init":
         forwarded = [str(args.target), "--repo", args.repo, "--ref", args.ref, "--template", args.template]
-        for option in ("project-name", "description", "github-owner", "repo-name", "go-module", "cargo-package", "binary-name"):
+        for option in ("project-name", "description", "github-owner", "repo-name", "python-package", "go-module", "cargo-package", "node-package", "binary-name"):
             value = getattr(args, option.replace("-", "_"))
             if value is not None:
                 forwarded.extend([f"--{option}", value])
@@ -1141,7 +1143,7 @@ def main(argv: list[str] | None = None) -> None:
             "--template",
             args.template,
         ]
-        for option in ("project-name", "description", "github-owner", "repo-name", "go-module", "cargo-package", "binary-name"):
+        for option in ("project-name", "description", "github-owner", "repo-name", "python-package", "go-module", "cargo-package", "node-package", "binary-name"):
             value = getattr(args, option.replace("-", "_"))
             if value is not None:
                 forwarded.extend([f"--{option}", value])

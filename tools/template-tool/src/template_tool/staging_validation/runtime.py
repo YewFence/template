@@ -156,8 +156,22 @@ def _job_text(workflow: str, job: str) -> str:
     return match.group("body")
 
 
-def validate_docs_site(context: StagingContext) -> None:
-    """Validate the shared docs-site enabled/disabled output contract."""
+def validate_docs_site(
+    context: StagingContext,
+    *,
+    docs_tools: Sequence[str] = ("node", "pnpm"),
+    docs_only_tools: Sequence[str] | None = None,
+) -> None:
+    """Validate the shared docs-site enabled/disabled output contract.
+
+    ``docs_tools`` lists the mise tools the docs-site capability depends on
+    when enabled. ``docs_only_tools`` lists the subset that belongs to the
+    docs-site capability alone and must be absent when the capability is
+    disabled; it defaults to ``docs_tools``. A template whose base toolchain
+    already owns those tools (for example node and aube) passes an empty
+    sequence for ``docs_only_tools``.
+    """
+    forbidden_tools = tuple(docs_tools) if docs_only_tools is None else tuple(docs_only_tools)
     workflow = context.read(".github/workflows/ci.yml")
     enabled = context.has_capability("docs-site")
     if enabled:
@@ -165,7 +179,7 @@ def validate_docs_site(context: StagingContext) -> None:
             ("docs:install", "docs:lock", "docs:install:locked", "docs:dev", "docs:build", "docs:preview"),
             message="docs-site enabled but mise task is missing",
         )
-        for tool in ("node", "pnpm"):
+        for tool in docs_tools:
             context.assert_tool(tool, message="docs-site enabled but mise tool is missing")
         if not context.exists("docs") or not context.exists("docs/package.json") or not context.exists(".github/workflows/docs.yml"):
             raise ValidationError("docs-site enabled but complete outputs are missing")
@@ -174,7 +188,7 @@ def validate_docs_site(context: StagingContext) -> None:
     else:
         if any(task.startswith("docs:") for task in context.task_names()):
             raise ValidationError("docs-site disabled but mise docs tasks remain")
-        for tool in ("node", "pnpm"):
+        for tool in forbidden_tools:
             if re.search(rf"^{re.escape(tool)}\s*=", context.read("mise.toml"), re.MULTILINE):
                 raise ValidationError(f"docs-site disabled but mise tool remains: {tool}")
         if context.exists("docs") or context.exists(".github/workflows/docs.yml"):

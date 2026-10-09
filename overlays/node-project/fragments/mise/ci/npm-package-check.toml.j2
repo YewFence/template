@@ -1,0 +1,4 @@
+[tasks."npm:package:check"]
+description = "Verify the package can be packed for npm"
+depends = ["build"]
+run = "aube publish --dry-run --no-git-checks"

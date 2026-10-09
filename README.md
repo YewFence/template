@@ -6,7 +6,7 @@ Project templates for bootstrapping new repositories: a language-agnostic base, 
 
 | Feature | Description |
 | --- | --- |
-| Project templates | Four profiles — `common` (language-agnostic), `python` (uv + Ruff + ty), `go-cli` (Go + Cobra), and `rust` (Rust CLI) — each with its own optional capabilities |
+| Project templates | Five profiles — `common` (language-agnostic), `python` (uv + Ruff + ty), `go-cli` (Go + Cobra), `rust` (Rust CLI), and `node-project` (TypeScript + aube) — each with its own optional capabilities |
 | One-command instantiation | `init-project` interactively collects capabilities and metadata, creates the initial commit, and stages your project |
 | Toolchain management | Every development tool is managed through mise and locked per project |
 | Task runner | Ready-made mise tasks: `check`, `fix`, `build`, `test`, `deps:update`, `hooks:install`, and more |
@@ -25,6 +25,7 @@ Project templates for bootstrapping new repositories: a language-agnostic base, 
 | [`python`](overlays/python/README.md) | Python src-layout project with uv, Ruff, ty, and pytest | `docs-site`, `codecov-upload` |
 | [`go-cli`](overlays/go-cli/README.md) | Go CLI with a Cobra skeleton and multi-platform builds | plus `container-image-publish` (ko → GHCR) |
 | [`rust`](overlays/rust/README.md) | Rust CLI with a locked-by-default Cargo workflow | plus `crates-io-publish` (trusted publishing) |
+| [`node-project`](overlays/node-project/README.md) | TypeScript library with aube, vitest, oxlint, oxfmt, tsdown, and tsc | `docs-site`, `codecov-upload`, `npm-publish` |
 
 Each template also renders a complete default-capability preview under [`templates/`](templates/).
 
@@ -110,7 +111,7 @@ Editable sources live in `shared/` and `overlays/`; `templates/<name>/` holds th
 - [Agent skill](skills/use-template/SKILL.md) — hand the whole flow to a coding agent: profile and capability selection, instantiation, conflict resolution, and bootstrap to a passing check
 - [Usage guide](docs/guides/use-template.md) — preconditions, conflict handling, non-interactive usage, and the Bash fallback
 - [CLI reference](docs/reference/cli.md) — every command and option, generated from the tool's `--help` output
-- [crates.io publishing guide](docs/guides/rust-crates-io-publishing.md) and [container image publishing guide](docs/guides/go-cli-container-image-publishing.md) — for the respective capabilities
+- [crates.io publishing guide](docs/guides/rust-crates-io-publishing.md), [npm publishing guide](docs/guides/node-npm-publishing.md), and [container image publishing guide](docs/guides/go-cli-container-image-publishing.md) — for the respective capabilities
 - Maintenance rules and the full documentation index: [AGENTS.md](AGENTS.md) and [docs/](docs/README.md)
 
 ## License

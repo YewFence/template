@@ -1,0 +1,8 @@
+{
+  "enabledManagers": ["github-actions", "npm", "mise"],
+  "capabilityContributions": {
+    "docs-site": {
+      "enabledManagers": ["npm"]
+    }
+  }
+}

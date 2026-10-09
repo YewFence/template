@@ -1,0 +1,4 @@
+
+      - name: Check npm package
+        if: ${{ github.event_name == 'pull_request' }}
+        run: mise run npm:package:check

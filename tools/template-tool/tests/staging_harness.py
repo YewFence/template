@@ -27,6 +27,7 @@ PROFILE_CAPABILITIES: dict[str, tuple[str, ...]] = {
     "python": ("codecov-upload", "docs-site"),
     "go-cli": ("codecov-upload", "container-image-publish", "docs-site"),
     "rust": ("codecov-upload", "crates-io-publish", "docs-site"),
+    "node-project": ("codecov-upload", "docs-site", "npm-publish"),
 }
 
 
@@ -163,6 +164,7 @@ class StagingHarness:
     ) -> None:
         docs_enabled = "docs-site" in enabled_capabilities
         crates_io_enabled = "crates-io-publish" in enabled_capabilities
+        npm_publish_enabled = "npm-publish" in enabled_capabilities
         container_image_enabled = "container-image-publish" in enabled_capabilities
         codecov_enabled = "codecov-upload" in enabled_capabilities
         (template_root / ".github/workflows").mkdir(parents=True)
@@ -208,6 +210,13 @@ class StagingHarness:
                 (
                     "      - name: Check crates.io package",
                     "        run: mise run crates-io:package:check",
+                )
+            )
+        if profile == "node-project" and npm_publish_enabled:
+            ci_lines.extend(
+                (
+                    "      - name: Check npm package",
+                    "        run: mise run npm:package:check",
                 )
             )
         (template_root / ".github/workflows/ci.yml").write_text(
@@ -261,6 +270,19 @@ class StagingHarness:
             publish_script = scripts_directory / "publish-crate"
             publish_script.write_text("#!/bin/sh\n", encoding="utf-8")
             publish_script.chmod(0o755)
+        if profile == "node-project" and npm_publish_enabled:
+            release_lines.extend(
+                (
+                    "  publish-npm:",
+                    "      - name: Publish package",
+                    "        run: mise run npm:publish",
+                )
+            )
+            scripts_directory = template_root / "scripts"
+            scripts_directory.mkdir()
+            publish_script = scripts_directory / "publish-npm"
+            publish_script.write_text("#!/bin/sh\n", encoding="utf-8")
+            publish_script.chmod(0o755)
         if profile == "go-cli" and container_image_enabled:
             release_lines.extend(
                 (
@@ -283,7 +305,9 @@ class StagingHarness:
         tool_lines = ["[tools]", 'python = "3.14"']
         if profile == "python":
             tool_lines.extend(('uv = "0"', 'ruff = "0.16"', 'ty = "0.0"'))
-        if docs_enabled:
+        if profile == "node-project":
+            tool_lines.extend(('node = "26"', 'aube = "2"'))
+        elif docs_enabled:
             tool_lines.extend(('node = "26"', 'pnpm = "11"'))
         (template_root / "mise.toml").write_text(
             "\n".join(tool_lines) + "\n", encoding="utf-8"
@@ -314,6 +338,56 @@ class StagingHarness:
                 'build-backend = "hatchling.build"\n\n'
                 "[tool.hatch.build.targets.wheel]\n"
                 'packages = ["src/example_python_project"]\n',
+                encoding="utf-8",
+            )
+        if profile == "node-project":
+            source = template_root / "src/example_node_project"
+            source.mkdir(parents=True)
+            (source / "index.ts").write_text(
+                "export function greet(name: string): string {\n"
+                "  return `Hello, ${name}!`;\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            tests = template_root / "tests"
+            tests.mkdir()
+            (tests / "index.test.ts").write_text(
+                'import { greet } from "../src/example_node_project/index.js";\n\n'
+                'describe("greet", () => {\n'
+                '  it("greets", () => {\n'
+                '    expect(greet("world")).toBe("Hello, world!");\n'
+                "  });\n"
+                "});\n",
+                encoding="utf-8",
+            )
+            (template_root / "tsconfig.json").write_text(
+                '{\n  "compilerOptions": { "strict": true }\n}\n',
+                encoding="utf-8",
+            )
+            (template_root / "vitest.config.ts").write_text(
+                'import { defineConfig } from "vitest/config";\n\n'
+                "export default defineConfig({\n"
+                "  test: { include: [\"tests/**/*.test.ts\"] },\n"
+                "});\n",
+                encoding="utf-8",
+            )
+            coverage_dependency = (
+                ',\n    "@vitest/coverage-v8": "^5.0.0"' if codecov_enabled else ""
+            )
+            (template_root / "package.json").write_text(
+                "{\n"
+                '  "name": "example-node-project",\n'
+                '  "type": "module",\n'
+                '  "exports": { ".": "./dist/index.js" },\n'
+                '  "devDependencies": {\n'
+                '    "oxfmt": "^0.72.0",\n'
+                '    "oxlint": "^1.87.0",\n'
+                '    "tsdown": "^0.23.1",\n'
+                '    "typescript": "^7.0.0",\n'
+                '    "vitest": "^5.0.0"'
+                f"{coverage_dependency}\n"
+                "  }\n"
+                "}\n",
                 encoding="utf-8",
             )
         if codecov_enabled:
@@ -357,6 +431,7 @@ class StagingHarness:
                 "python": "coverage.xml",
                 "go-cli": "coverage.out",
                 "rust": "lcov.info",
+                "node-project": "coverage/lcov.info",
             }[profile]
             (template_root / ".gitignore").write_text(f"/{report}\n", encoding="utf-8")
         (template_root / "tracked").write_text("tracked\n", encoding="utf-8")
@@ -406,6 +481,22 @@ class StagingHarness:
                     "test",
                 )
             )
+        if profile == "node-project":
+            tasks.extend(
+                (
+                    "audit",
+                    "build",
+                    "build:check",
+                    "deps:check",
+                    "deps:fix",
+                    "deps:install",
+                    "fmt:check",
+                    "fmt:fix",
+                    "lint",
+                    "lint:fix",
+                    "test",
+                )
+            )
         if "codecov-upload" in enabled_capabilities:
             tasks.append("coverage")
         if "docs-site" in enabled_capabilities:
@@ -421,6 +512,8 @@ class StagingHarness:
             )
         if profile == "rust" and "crates-io-publish" in enabled_capabilities:
             tasks.extend(("crates-io:package:check", "crates-io:publish"))
+        if profile == "node-project" and "npm-publish" in enabled_capabilities:
+            tasks.extend(("npm:package:check", "npm:publish"))
         if profile == "go-cli" and "container-image-publish" in enabled_capabilities:
             tasks.extend(("container:build", "container:publish"))
         path.write_text(

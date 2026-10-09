@@ -53,6 +53,16 @@ class TestValidationAdapter(StagingHarness):
         )
         assert "Usage: //overlays/rust:check <template_root>" in completed.stdout
 
+    def test_node_project_namespaced_task_is_discoverable(self) -> None:
+        completed = subprocess.run(
+            ["mise", "run", "//overlays/node-project:check", "--help"],
+            cwd=REPOSITORY_ROOT,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        assert "Usage: //overlays/node-project:check <template_root>" in completed.stdout
+
     def test_common_adapter_runs_through_namespaced_mise_task(self) -> None:
         with self.staged_repository("common", ()) as root:
             completed = self.invoke_adapter(
@@ -66,7 +76,7 @@ class TestValidationAdapter(StagingHarness):
             calls = (root / "mise-calls").read_text(encoding="utf-8").splitlines()
             assert "run check" in calls
 
-    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust", "node-project"))
     @pytest.mark.parametrize("all_capabilities", (False, True))
     def test_ci_tools_are_installed_before_project_validation(
         self, profile: str, all_capabilities: bool
@@ -78,25 +88,25 @@ class TestValidationAdapter(StagingHarness):
         install_index = calls.index("-E ci install --locked")
         assert lock_index < install_index < calls.index("run deps:update")
         assert install_index < calls.index("run check")
-        for task in ("audit", "container:build", "crates-io:package:check"):
+        for task in ("audit", "container:build", "crates-io:package:check", "npm:package:check"):
             if f"run {task}" in calls:
                 assert install_index < calls.index(f"run {task}")
 
-    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust", "node-project"))
     def test_monorepo_ci_checks_template(self, profile: str) -> None:
         workflow = (REPOSITORY_ROOT / ".github/workflows/ci.yml").read_text(
             encoding="utf-8"
         )
         assert f"        run: mise run check {profile}\n" in workflow
 
-    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust", "node-project"))
     def test_docs_site_disabled_skips_documentation_toolchain(self, profile: str) -> None:
         calls = self.run_adapter(profile, ())
 
         assert "run docs:lock" not in calls
         assert "run docs:build" not in calls
 
-    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust", "node-project"))
     def test_docs_site_enabled_locks_and_builds_documentation(self, profile: str) -> None:
         calls = self.run_adapter(profile, ("docs-site",))
 
@@ -113,6 +123,16 @@ class TestValidationAdapter(StagingHarness):
 
         assert "run crates-io:package:check" not in calls
 
+    def test_npm_publish_enabled_checks_package(self) -> None:
+        calls = self.run_adapter("node-project", ("npm-publish",))
+
+        assert "run npm:package:check" in calls
+
+    def test_npm_publish_disabled_skips_package_check(self) -> None:
+        calls = self.run_adapter("node-project", ())
+
+        assert "run npm:package:check" not in calls
+
     def test_container_image_publish_enabled_builds_local_image(self) -> None:
         calls = self.run_adapter("go-cli", ("container-image-publish",))
 
@@ -123,12 +143,12 @@ class TestValidationAdapter(StagingHarness):
 
         assert "run container:build" not in calls
 
-    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust", "node-project"))
     def test_codecov_upload_enabled_validates_both_workflows(self, profile: str) -> None:
         calls = self.run_adapter(profile, ("codecov-upload",))
         assert "run actions:update" in calls
 
-    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust", "node-project"))
     def test_codecov_upload_disabled_skips_coverage_validation(self, profile: str) -> None:
         calls = self.run_adapter(profile, ())
         assert "run coverage" not in calls
@@ -189,7 +209,16 @@ class TestValidationAdapter(StagingHarness):
             )
         assert "container-image-publish" in captured.value.stderr
 
-    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust"))
+    def test_explicit_npm_publish_state_rejects_mismatched_staged_project(self) -> None:
+        with pytest.raises(AdapterFailure) as captured:
+            self.run_adapter(
+                "node-project",
+                ("npm-publish",),
+                staged_capabilities=(),
+            )
+        assert "npm-publish" in captured.value.stderr
+
+    @pytest.mark.parametrize("profile", ("common", "python", "go-cli", "rust", "node-project"))
     def test_explicit_codecov_upload_state_rejects_mismatched_staged_project(
         self,
         profile: str,

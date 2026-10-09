@@ -20,7 +20,7 @@ usage: init-project [-h] [--repo REPO] --ref REF --template TEMPLATE
                     [--github-owner GITHUB_OWNER] [--repo-name REPO_NAME]
                     [--python-package PYTHON_PACKAGE] [--go-module GO_MODULE]
                     [--cargo-package CARGO_PACKAGE]
-                    [--binary-name BINARY_NAME]
+                    [--node-package NODE_PACKAGE] [--binary-name BINARY_NAME]
                     [--enable-capability ENABLE_CAPABILITY]
                     [--disable-capability DISABLE_CAPABILITY] [--interactive]
                     [--keep-tokens]
@@ -49,7 +49,7 @@ options:
                         or a release tag; the template contract and renderer
                         always come from this ref
   --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, python, go-cli, rust)
+                        common, python, go-cli, rust, node-project)
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -69,6 +69,9 @@ options:
   --cargo-package CARGO_PACKAGE
                         Cargo package name; rust template only (metadata
                         field: cargo_package)
+  --node-package NODE_PACKAGE
+                        JavaScript source directory name under src/; node-
+                        project template only (metadata field: node_package)
   --binary-name BINARY_NAME
                         name of the compiled binary; go-cli and rust templates
                         only (metadata field: binary_name)
@@ -103,6 +106,7 @@ usage: apply-template [-h] [--repo REPO] --ref REF --template TEMPLATE
                       [--github-owner GITHUB_OWNER] [--repo-name REPO_NAME]
                       [--python-package PYTHON_PACKAGE]
                       [--go-module GO_MODULE] [--cargo-package CARGO_PACKAGE]
+                      [--node-package NODE_PACKAGE]
                       [--binary-name BINARY_NAME]
                       [--enable-capability ENABLE_CAPABILITY]
                       [--disable-capability DISABLE_CAPABILITY]
@@ -130,7 +134,7 @@ options:
                         or a release tag; the template contract and renderer
                         always come from this ref
   --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, python, go-cli, rust)
+                        common, python, go-cli, rust, node-project)
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -150,6 +154,9 @@ options:
   --cargo-package CARGO_PACKAGE
                         Cargo package name; rust template only (metadata
                         field: cargo_package)
+  --node-package NODE_PACKAGE
+                        JavaScript source directory name under src/; node-
+                        project template only (metadata field: node_package)
   --binary-name BINARY_NAME
                         name of the compiled binary; go-cli and rust templates
                         only (metadata field: binary_name)
@@ -185,6 +192,7 @@ usage: export-template [-h] [--repo REPO] --ref REF --template TEMPLATE
                        [--github-owner GITHUB_OWNER] [--repo-name REPO_NAME]
                        [--python-package PYTHON_PACKAGE]
                        [--go-module GO_MODULE] [--cargo-package CARGO_PACKAGE]
+                       [--node-package NODE_PACKAGE]
                        [--binary-name BINARY_NAME]
                        [--enable-capability ENABLE_CAPABILITY]
                        [--disable-capability DISABLE_CAPABILITY]
@@ -212,7 +220,7 @@ options:
                         or a release tag; the template contract and renderer
                         always come from this ref
   --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, python, go-cli, rust)
+                        common, python, go-cli, rust, node-project)
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -232,6 +240,9 @@ options:
   --cargo-package CARGO_PACKAGE
                         Cargo package name; rust template only (metadata
                         field: cargo_package)
+  --node-package NODE_PACKAGE
+                        JavaScript source directory name under src/; node-
+                        project template only (metadata field: node_package)
   --binary-name BINARY_NAME
                         name of the compiled binary; go-cli and rust templates
                         only (metadata field: binary_name)
@@ -270,7 +281,7 @@ options:
                        or a release tag; the template contract and renderer
                        always come from this ref
   --template TEMPLATE  template profile declared in templates.toml (e.g.
-                       common, python, go-cli, rust)
+                       common, python, go-cli, rust, node-project)
   --json               print the capability contract as a stable single-line
                        JSON object for scripting
 
@@ -389,6 +400,7 @@ usage: template-tool apply [-h] [--repo REPO] --ref REF --template TEMPLATE
                            [--python-package PYTHON_PACKAGE]
                            [--go-module GO_MODULE]
                            [--cargo-package CARGO_PACKAGE]
+                           [--node-package NODE_PACKAGE]
                            [--binary-name BINARY_NAME]
                            [--enable-capability ENABLE_CAPABILITY]
                            [--disable-capability DISABLE_CAPABILITY]
@@ -416,7 +428,7 @@ options:
                         or a release tag; the template contract and renderer
                         always come from this ref
   --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, python, go-cli, rust)
+                        common, python, go-cli, rust, node-project)
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -436,6 +448,9 @@ options:
   --cargo-package CARGO_PACKAGE
                         Cargo package name; rust template only (metadata
                         field: cargo_package)
+  --node-package NODE_PACKAGE
+                        JavaScript source directory name under src/; node-
+                        project template only (metadata field: node_package)
   --binary-name BINARY_NAME
                         name of the compiled binary; go-cli and rust templates
                         only (metadata field: binary_name)
@@ -473,6 +488,7 @@ usage: template-tool init [-h] [--repo REPO] --ref REF --template TEMPLATE
                           [--python-package PYTHON_PACKAGE]
                           [--go-module GO_MODULE]
                           [--cargo-package CARGO_PACKAGE]
+                          [--node-package NODE_PACKAGE]
                           [--binary-name BINARY_NAME]
                           [--enable-capability ENABLE_CAPABILITY]
                           [--disable-capability DISABLE_CAPABILITY]
@@ -502,7 +518,7 @@ options:
                         or a release tag; the template contract and renderer
                         always come from this ref
   --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, python, go-cli, rust)
+                        common, python, go-cli, rust, node-project)
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -522,6 +538,9 @@ options:
   --cargo-package CARGO_PACKAGE
                         Cargo package name; rust template only (metadata
                         field: cargo_package)
+  --node-package NODE_PACKAGE
+                        JavaScript source directory name under src/; node-
+                        project template only (metadata field: node_package)
   --binary-name BINARY_NAME
                         name of the compiled binary; go-cli and rust templates
                         only (metadata field: binary_name)
@@ -558,6 +577,7 @@ usage: template-tool export [-h] [--repo REPO] --ref REF --template TEMPLATE
                             [--python-package PYTHON_PACKAGE]
                             [--go-module GO_MODULE]
                             [--cargo-package CARGO_PACKAGE]
+                            [--node-package NODE_PACKAGE]
                             [--binary-name BINARY_NAME]
                             [--enable-capability ENABLE_CAPABILITY]
                             [--disable-capability DISABLE_CAPABILITY]
@@ -585,7 +605,7 @@ options:
                         or a release tag; the template contract and renderer
                         always come from this ref
   --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, python, go-cli, rust)
+                        common, python, go-cli, rust, node-project)
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -605,6 +625,9 @@ options:
   --cargo-package CARGO_PACKAGE
                         Cargo package name; rust template only (metadata
                         field: cargo_package)
+  --node-package NODE_PACKAGE
+                        JavaScript source directory name under src/; node-
+                        project template only (metadata field: node_package)
   --binary-name BINARY_NAME
                         name of the compiled binary; go-cli and rust templates
                         only (metadata field: binary_name)
@@ -643,7 +666,7 @@ options:
                        or a release tag; the template contract and renderer
                        always come from this ref
   --template TEMPLATE  template profile declared in templates.toml (e.g.
-                       common, python, go-cli, rust)
+                       common, python, go-cli, rust, node-project)
   --json               print the capability contract as a stable single-line
                        JSON object for scripting
 

@@ -1,0 +1,4 @@
+[tasks."npm:publish"]
+description = "Publish the release package to npm if its version does not already exist"
+depends = ["build"]
+file = "scripts/publish-npm"

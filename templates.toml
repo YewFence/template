@@ -319,3 +319,80 @@ hints = [
  release_artifact_download = ["overlay:workflows/release/download-artifacts.yml.j2"]
  release_files = ["shared:workflows/release/files.yml.j2"]
  publish_crate_job = { capability = "crates-io-publish", fragments = ["overlay:workflows/release/publish-crate-job.yml.j2"] }
+ [templates.node-project]
+ [templates.node-project.capabilities]
+ docs-site = true
+ codecov-upload = false
+ npm-publish = false
+ [templates.node-project.instantiation]
+ required = ["project_name", "description", "github_owner", "repo_name", "node_package"]
+ [templates.node-project.instantiation.tokens]
+ PROJECT_NAME = "project_name"
+ PROJECT_DESCRIPTION = "description"
+ GITHUB_OWNER = "github_owner"
+ REPO_NAME = "repo_name"
+ NODE_PACKAGE = "node_package"
+ [templates.node-project.instantiation.derived.PROJECT_DESCRIPTION_JSON]
+ source = "description"
+ transform = "json-string"
+ [templates.node-project.instantiation.derived.PROJECT_NAME_JSON]
+ source = "project_name"
+ transform = "json-string"
+ [templates.node-project.instantiation.validation.metadata]
+ project_name = "Example Node Project"
+ description = "Example Node project description"
+ github_owner = "YewFence"
+ repo_name = "example-node-project"
+ node_package = "example_node_project"
+ [templates.node-project.instantiation.export.metadata]
+ project_name = "REPLACE ME: project name"
+ description = "REPLACE ME: project description"
+ github_owner = "replace-me-owner"
+ repo_name = "replace-me-repository"
+ node_package = "replace_me_package"
+ [templates.node-project.slots."mise.ci.toml"]
+ audit_tasks = ["overlay:mise/ci/audit.toml.j2"]
+ coverage_tools = { capability = "codecov-upload", fragments = ["shared:mise/ci/codecov-tools.toml.j2"] }
+ npm_package_check = { capability = "npm-publish", fragments = ["overlay:mise/ci/npm-package-check.toml.j2"] }
+ npm_publish_task = { capability = "npm-publish", fragments = ["overlay:mise/ci/npm-publish.toml.j2"] }
+ release_version_tasks = ["overlay:mise/ci/release-version.toml.j2"]
+ release_package = ["shared:mise/ci/common-package.toml.j2"]
+ [templates.node-project.slots."package.json"]
+ coverage_dependency = { capability = "codecov-upload", fragments = ["overlay:package/coverage-dependency.json.j2"] }
+ [templates.node-project.slots."mise.toml"]
+ docs_tools = { capability = "docs-site", fragments = ["overlay:mise/docs-tools.toml.j2"] }
+ docs_tasks = { capability = "docs-site", fragments = ["overlay:mise/docs-tasks.toml.j2"] }
+ coverage_task = { capability = "codecov-upload", fragments = ["overlay:mise/coverage.toml.j2"] }
+ [templates.node-project.slots."README.md"]
+ docs_badge = { capability = "docs-site", fragments = ["shared:docs/README.md.j2"] }
+ docs_section = { capability = "docs-site", fragments = ["shared:docs/README-section.md.j2"] }
+ [templates.node-project.slots."CONTRIBUTING.md"]
+ project_principles = ["overlay:contributing/project-principles.md.j2"]
+ audit_command = ["overlay:contributing/audit-command.md.j2"]
+ docs_section = { capability = "docs-site", fragments = ["shared:docs/CONTRIBUTING-section.md.j2"] }
+ [templates.node-project.slots.".gitignore"]
+ project_ignored_paths = ["overlay:gitignore/project-ignored-paths.j2"]
+ docs_ignored_paths = { capability = "docs-site", fragments = ["shared:docs-ignored-paths.j2"] }
+ coverage_ignored_paths = { capability = "codecov-upload", fragments = ["overlay:gitignore/coverage.j2"] }
+ [templates.node-project.slots.".github/workflows/ci.yml"]
+ docs_job = { capability = "docs-site", fragments = ["overlay:workflows/docs/docs-job.yml.j2"] }
+ npm_package_check = { capability = "npm-publish", fragments = ["overlay:workflows/ci/npm-package-check.yml.j2"] }
+ coverage_job = { capability = "codecov-upload", fragments = ["shared:workflows/coverage/pr-prefix.yml.j2", "overlay:workflows/ci/coverage-job.yml.j2", "shared:workflows/coverage/pr-suffix.yml.j2"] }
+ [templates.node-project.capability_outputs]
+ docs-site = ["docs/", ".github/workflows/docs.yml"]
+ codecov-upload = [".github/workflows/coverage.yml"]
+ npm-publish = ["scripts/publish-npm"]
+ [templates.node-project.slots.".github/workflows/coverage.yml"]
+ coverage_job = { capability = "codecov-upload", fragments = ["shared:workflows/coverage/default-prefix.yml.j2", "overlay:workflows/ci/coverage-job.yml.j2", "shared:workflows/coverage/default-suffix.yml.j2"] }
+ [templates.node-project.slots.".github/workflows/audit.yml"]
+ audit_paths = ["overlay:workflows/audit/paths.yml.j2"]
+ [templates.node-project.slots.".github/workflows/prepare-release.yml"]
+ release_install_args = ["shared:workflows/prepare-release/install-args.j2"]
+ release_files = ["overlay:workflows/prepare-release/files.j2"]
+ release_files_update = ["overlay:workflows/prepare-release/update-files.yml.j2"]
+ [templates.node-project.slots.".github/workflows/release.yml"]
+ release_needs = ["shared:workflows/release/version-only.j2"]
+ publish_npm_job = { capability = "npm-publish", fragments = ["overlay:workflows/release/publish-npm-job.yml.j2"] }
+ [templates.node-project.paths]
+ ".github/workflows/docs.yml" = "overlay"
+ "docs/pnpm-workspace.yaml" = "omit"

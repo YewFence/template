@@ -41,7 +41,7 @@ mise run hooks:install
 mise run check
 ```
 
-Review the generated `mise.lock`, `mise.ci.lock`, Go/Cargo dependency state, `docs/pnpm-lock.yaml`, and pinact's workflow changes together with the project sources, then commit them. From this point on the project is a bootstrapped project and `mise run check` is expected to pass.
+Review the generated `mise.lock`, `mise.ci.lock`, language dependency state (Go/Cargo state or `aube-lock.yaml`), the docs lockfile, and pinact's workflow changes together with the project sources, then commit them. From this point on the project is a bootstrapped project and `mise run check` is expected to pass.
 
 ## Apply to an Existing Repository
 
@@ -129,7 +129,8 @@ The Bash launcher first fetches the selected ref shallowly for the whole reposit
 
 ## Next Steps
 
-- Per-template specifics: [common](../../overlays/common/README.md), [python](../../overlays/python/README.md), [go-cli](../../overlays/go-cli/README.md), [rust](../../overlays/rust/README.md)
+- Per-template specifics: [common](../../overlays/common/README.md), [python](../../overlays/python/README.md), [go-cli](../../overlays/go-cli/README.md), [rust](../../overlays/rust/README.md), [node-project](../../overlays/node-project/README.md)
 - Projects with `codecov-upload` enabled: [Codecov upload guide](codecov-upload.md)
 - Rust projects with `crates-io-publish` enabled: [crates.io publishing guide](rust-crates-io-publishing.md)
+- Node projects with `npm-publish` enabled: [npm publishing guide](node-npm-publishing.md)
 - Go CLI projects with `container-image-publish` enabled: [container image publishing guide](go-cli-container-image-publishing.md)

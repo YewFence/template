@@ -10,6 +10,7 @@ Current guides, architecture, decisions, and plans for this monorepo.
 - [Uploading coverage to Codecov](guides/codecov-upload.md): public-repository prerequisites, PR tokenless uploads, default-branch OIDC, and profile-specific coverage reports.
 - [Publishing container images (Go CLI)](guides/go-cli-container-image-publishing.md): local builds, GHCR permissions, and release behavior with the `container-image-publish` capability.
 - [Publishing to crates.io (Rust)](guides/rust-crates-io-publishing.md): first-release setup and the ongoing release flow with the `crates-io-publish` capability.
+- [Publishing to npm (Node)](guides/node-npm-publishing.md): first-release setup and the ongoing release flow with the `npm-publish` capability.
 
 ## For Maintainers
 
