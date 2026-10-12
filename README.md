@@ -11,7 +11,7 @@ Project templates for bootstrapping new repositories: a language-agnostic base, 
 | Toolchain management | Every development tool is managed through mise and locked per project |
 | Task runner | Ready-made mise tasks: `check`, `fix`, `build`, `test`, `deps:update`, `hooks:install`, and more |
 | CI checks | GitHub Actions run the project checks, audit dependencies, and build the docs site |
-| Release automation | git-cliff prepares release PRs from `main`; pushed `v*` tags and merged release PRs publish GitHub Releases with pre-built archives |
+| Release automation | git-cliff prepares release PRs from `main`; pushed `v*` tags and merged release PRs publish GitHub Releases with pre-built archives. During early 0.x development breaking changes bump the minor version instead of the major — set `breaking_always_bump_major` in `cliff.toml` to restore major bumps |
 | Dependency updates | Renovate config covering GitHub Actions, language dependencies, and mise tools |
 | Docs site | Optional VitePress documentation site deployed to GitHub Pages (`docs-site` capability, enabled by default) |
 | Coverage | Optional Codecov upload (`codecov-upload` capability) — see the [Codecov guide](docs/guides/codecov-upload.md) |
