@@ -1,4 +1,4 @@
 
 [tasks.coverage]
 description = "Generate coverage.out for Codecov upload"
-run = "go test -covermode=atomic -coverprofile=coverage.out ./..."
+run = "go test -covermode=atomic -coverpkg=./... -coverprofile=coverage.out ./..."

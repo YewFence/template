@@ -24,7 +24,7 @@ nllint_excludes = ""
 [env]
 # the minimum release age of github actions in days
 PINACT_MIN_AGE = "3"
-PINACT_GITHUB_TOKEN = { value = "${MISE_GITHUB_TOKEN:-}", redact = true }
+PINACT_GITHUB_TOKEN = { value = "${PINACT_GITHUB_TOKEN:-${MISE_GITHUB_TOKEN:-}}", redact = true }
 
 [tasks."deps:check"]
 description = "[PLACEHOLDER] Check project dependency metadata and lockfiles"
