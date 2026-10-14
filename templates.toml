@@ -396,3 +396,4 @@ hints = [
  [templates.node-project.paths]
  ".github/workflows/docs.yml" = "overlay"
  "docs/pnpm-workspace.yaml" = "omit"
+ "_typos.toml" = "overlay"
