@@ -1,8 +1,9 @@
 # {{PROJECT_NAME}}
 
 [![Release](https://img.shields.io/github/v/release/{{GITHUB_OWNER}}/{{REPO_NAME}}?sort=semver)](https://github.com/{{GITHUB_OWNER}}/{{REPO_NAME}}/releases)
-<$ slot("docs_badge", optional=true) | trim $>
-[![License](https://img.shields.io/github/license/{{GITHUB_OWNER}}/{{REPO_NAME}})](LICENSE)
+<% set docs_badge = slot("docs_badge", optional=true) %><% set codecov_badge = slot("codecov_badge", optional=true) %><% if docs_badge %><$ docs_badge $>
+<% endif %><% if codecov_badge %><$ codecov_badge $>
+<% endif %>[![License](https://img.shields.io/github/license/{{GITHUB_OWNER}}/{{REPO_NAME}})](LICENSE)
 
 {{PROJECT_DESCRIPTION}}
 

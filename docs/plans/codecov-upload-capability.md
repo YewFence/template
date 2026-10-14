@@ -146,7 +146,7 @@ workflow 不复制 `go test`、`cargo llvm-cov`、用户自定义 coverage 命�
 | `shared/fragments/docs-ignored-paths.j2` 或 profile overlay | 忽略 `coverage.out`、`lcov.info`、`coverage.xml` 等 capability 生成的临时报告 |
 | `overlays/*/mise.toml` | 按 enabled capability 检查任务、工具、workflow 和关闭时的缺席 |
 
-是否把 Codecov badge 加入 README 不属于上传 capability 的必要输出。第一版不生成 badge，避免把 Codecov project visibility、默认 branch 和 README 文案耦合到上传合同；未来如果确有稳定需求，可以单独增加 capability-owned README fragment。
+启用 `codecov-upload` 时，README 徽章行在 Release 与 License 徽章之间插入 capability-owned 的 Codecov badge（`shared:codecov/README.md.j2`），指向 `codecov.io/gh/{owner}/{repo}` 的默认分支报告；关闭 capability 时不渲染任何 Codecov 徽章。该 badge 属于 capability 输出合同，随 workflow 一起启用和移除，不耦合 threshold 或 `codecov.yml` 策略。
 
 面向使用者的稳定认证、引导和 `common` adapter 合同由 monorepo 的 `docs/guides/codecov-upload.md` 统一拥有。它不作为 capability-owned README fragment 渲染进生成项目；根文档索引、根 README 和各 overlay README 链接该指南。生成项目只保留 workflow 与 `mise run coverage` 合同，不复制维护指南全文。
 
@@ -193,7 +193,7 @@ Renderer 合同、静态 workflow 合同、报告生成和完整 staging matrix 
 
 - 为 common 猜测或选择覆盖率生成器。
 - 修改主 `test` 或 `check` task，使每次本地检查都必须生成覆盖率。
-- 生成 `codecov.yml`、threshold、flags、components 或 badge。
+- 生成 `codecov.yml`、threshold、flags 或 components。
 - 使用长期 Codecov secret 作为默认认证方式。
 - 上传 fork PR 的 secrets，或使用 `pull_request_target` 执行不受信任代码。
 - 为 PR 默认设置 `override_branch` 或 `override_pr`，替代 Codecov Action 的 GitHub event 自动识别。
