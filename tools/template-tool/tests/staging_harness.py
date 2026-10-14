@@ -169,33 +169,6 @@ class StagingHarness:
         codecov_enabled = "codecov-upload" in enabled_capabilities
         (template_root / ".github/workflows").mkdir(parents=True)
         ci_lines = ["jobs:", "  check:"]
-        if codecov_enabled:
-            coverage_run = (
-                ("        run: |", "          mise run coverage")
-                if profile == "rust"
-                else ("        run: mise run coverage",)
-            )
-            ci_lines.extend(
-                (
-                    "  coverage:",
-                    "    if: ${{ github.event_name == 'pull_request' }}",
-                    "    permissions:",
-                    "      contents: read",
-                    "    steps:",
-                    "      - name: Generate coverage report",
-                    *coverage_run,
-                    "        id: coverage",
-                    "      - name: Resolve Codecov CLI",
-                    "        id: codecov-cli",
-                    "      - uses: codecov/codecov-action@v7",
-                    "        binary: ${{ steps.codecov-cli.outputs.path }}",
-                    "        files: ${{ steps.coverage.outputs.report }}",
-                    "        disable_search: true",
-                    "        fail_ci_if_error: true",
-                    "      - name: Summary",
-                    "        run: echo GITHUB_STEP_SUMMARY",
-                )
-            )
         if docs_enabled:
             ci_lines.extend(
                 ("  docs:", "    name: Docs", "      run: mise run docs:build")
@@ -229,13 +202,19 @@ class StagingHarness:
                         "on:",
                         "  push:",
                         "    branches: [main]",
+                        "    paths:",
+                        "      - .github/workflows/coverage.yml",
+                        "  pull_request:",
+                        "    branches: [main]",
+                        "    paths:",
+                        "      - .github/workflows/coverage.yml",
                         "  workflow_dispatch:",
                         "concurrency:",
                         "  group: coverage-${{ github.ref }}",
                         "  cancel-in-progress: true",
                         "jobs:",
                         "  coverage:",
-                        "    if: ${{ github.event_name == 'push' || github.ref == 'refs/heads/main' }}",
+                        "    if: ${{ github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main' }}",
                         "    permissions:",
                         "      contents: read",
                         "      id-token: write",
@@ -250,7 +229,9 @@ class StagingHarness:
                         "        files: ${{ steps.coverage.outputs.report }}",
                         "        disable_search: true",
                         "        fail_ci_if_error: true",
-                        "        use_oidc: true",
+                        "        use_oidc: ${{ github.event_name != 'pull_request' }}",
+                        "      - name: Summary",
+                        "        run: echo GITHUB_STEP_SUMMARY",
                     )
                 )
                 + "\n",

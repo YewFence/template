@@ -1,6 +1,6 @@
 # Uploading Coverage to Codecov
 
-The optional `codecov-upload` template capability adds a `mise run coverage` task and Codecov uploads for pull requests and the default branch. It is disabled by default for the `common`, `python`, `go-cli`, `rust`, and `node-project` template profiles.
+The optional `codecov-upload` template capability adds a `mise run coverage` task and a single Codecov upload workflow triggered by pull requests and the default branch. It is disabled by default for the `common`, `python`, `go-cli`, `rust`, and `node-project` template profiles.
 
 ## Prerequisites
 
@@ -10,11 +10,11 @@ The template does not create or read a long-lived `CODECOV_TOKEN`. Private repos
 
 ## Workflow Boundaries
 
-Pull request coverage runs as a job in `.github/workflows/ci.yml`. It uses the ordinary `pull_request` event, has only `contents: read`, and uploads without a token. It does not use OIDC, repository secrets, `pull_request_target`, `override_branch`, or `override_pr`. Codecov Action derives commit and pull request metadata from the GitHub event and handles the fork-specific tokenless path.
+All coverage runs live in a single `.github/workflows/coverage.yml` workflow, so pull requests and the default branch share one job structure instead of duplicating coverage steps across CI jobs. The workflow triggers on pushes to `main`, pull requests targeting `main`, and manual dispatches restricted to the `main` ref; both push and pull request triggers use path filters, so documentation-only or tooling-only changes no longer run a full test sweep just to refresh coverage.
 
-Default-branch coverage runs independently in `.github/workflows/coverage.yml`. Pushes to `main` and manual dispatches using the `main` ref regenerate the report and upload with Codecov OIDC. Only this trusted job receives `id-token: write`; it never consumes artifacts produced by a pull request workflow. Its concurrency group is `coverage-${{ github.ref }}` with cancellation enabled, so a newer `main` run supersedes an older one.
+The single coverage job always uploads exactly one explicit report file with automatic report search disabled and fails when report generation or upload fails. It uses the ordinary `pull_request` event and never `pull_request_target`, `override_branch`, or `override_pr`; Codecov Action derives commit and pull request metadata from the GitHub event and handles the fork-specific tokenless path. Authentication switches on the event name: `use_oidc` is enabled for default-branch pushes and manual dispatches, while pull requests (including forks) fall back to tokenless uploads. The job therefore declares `id-token: write`, which GitHub downgrades to read-only for fork pull requests, so forks can never mint the repository's OIDC token. Its concurrency group is `coverage-${{ github.ref }}` with cancellation enabled, so a newer run supersedes an older one on the same ref.
 
-Both paths upload exactly one explicit report file with automatic report search disabled and fail the job when report generation or upload fails. The workflow does not set `skip_validation`; Codecov Action keeps its default system-dependency checks while mise owns the supplied CLI's version and integrity state. The template does not define Codecov thresholds, flags, components, carryforward rules, badges, or `codecov.yml` policy.
+The workflow does not set `skip_validation`; Codecov Action keeps its default system-dependency checks while mise owns the supplied CLI's version and integrity state. The template does not define Codecov thresholds, flags, components, carryforward rules, badges, or `codecov.yml` policy.
 
 The workflow owns authentication and upload behavior. A profile `coverage_adapter` owns only its cache and report-generation task; it runs as the `coverage` step and exposes exactly one report path to the shared uploader. The `common` adapter is intentionally a failing placeholder: it prints the replacement instruction and exits non-zero until you provide a real coverage command. It never creates an empty or synthetic report.
 

@@ -1,0 +1,10 @@
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-coverage
+
+      - name: Generate coverage report
+        id: coverage
+        run: |
+          mise run coverage
+          echo "report=lcov.info" >> "$GITHUB_OUTPUT"

@@ -149,13 +149,6 @@ def _require_no_match(text: str, pattern: str, *, message: str) -> None:
         raise ValidationError(message)
 
 
-def _job_text(workflow: str, job: str) -> str:
-    match = re.search(rf"^  {re.escape(job)}:\n(?P<body>(?:^(?!  [A-Za-z0-9_-]+:).*(?:\n|$))*)", workflow, re.MULTILINE)
-    if match is None:
-        raise ValidationError(f"workflow job is missing: {job}")
-    return match.group("body")
-
-
 def validate_docs_site(
     context: StagingContext,
     *,
@@ -213,59 +206,50 @@ def validate_codecov_upload(
     coverage_workflow = context.read(".github/workflows/coverage.yml") if context.exists(".github/workflows/coverage.yml") else ""
     if enabled:
         context.assert_tasks(("coverage",), message="codecov-upload enabled but mise coverage task is missing")
-        coverage_job = _job_text(ci_workflow, "coverage")
         mise = context.read("mise.toml")
         _require_text(
             mise,
             coverage_placeholder,
             message="codecov-upload enabled but coverage placeholder contract is incomplete",
         )
+        if not coverage_workflow:
+            raise ValidationError("codecov-upload coverage workflow is missing")
         _require_text(
-            coverage_job,
+            coverage_workflow,
             (
-                "contents: read",
+                "github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'",
+                "pull_request:",
+                "paths:",
+                ".github/workflows/coverage.yml",
                 "uses: codecov/codecov-action@v7",
                 "binary: ${{ steps.codecov-cli.outputs.path }}",
                 "files: ${{ steps.coverage.outputs.report }}",
                 "disable_search: true",
                 "fail_ci_if_error: true",
-                "github.event_name ==",
+                "use_oidc: ${{ github.event_name != 'pull_request' }}",
+                "id-token: write",
                 "id: codecov-cli",
                 "GITHUB_STEP_SUMMARY",
+                "group: coverage-${{ github.ref }}",
+                "cancel-in-progress: true",
             ),
-            message="codecov-upload enabled but coverage job is missing",
+            message="codecov-upload coverage workflow is missing",
         )
-        if not re.search(r"run:\s*(?:\|\s*)?mise run coverage", coverage_job):
-            raise ValidationError("codecov-upload coverage job is missing: run: mise run coverage")
+        if not re.search(r"run:\s*(?:\|\s*)?mise run coverage", coverage_workflow):
+            raise ValidationError("codecov-upload coverage workflow is missing: run: mise run coverage")
         _require_no_match(
-            coverage_job,
-            r"id-token: write|contents: write|packages: write|pull-requests: write|CODECOV_TOKEN|pull_request_target|use_oidc|override_branch|override_pr|skip_validation",
-            message="codecov-upload coverage job requests unsafe permissions or authentication",
+            coverage_workflow,
+            r"CODECOV_TOKEN|pull_request_target|override_branch|override_pr|skip_validation",
+            message="codecov-upload coverage workflow requests unsafe authentication or behavior",
+        )
+        _require_no_match(
+            ci_workflow,
+            r"codecov|id-token: write|mise run coverage",
+            message="codecov-upload enabled but coverage behavior remains in the CI workflow",
         )
         for tool in required_ci_tools:
             if tool not in ci_tools or tool in mise:
                 raise ValidationError(f"codecov-upload CLI tool ownership is incorrect: {tool}")
-        if not coverage_workflow:
-            raise ValidationError("codecov-upload default branch workflow is missing")
-        _require_text(
-            coverage_workflow,
-            (
-                "github.event_name ==",
-                "refs/heads/main",
-                "id-token: write",
-                "use_oidc: true",
-                "binary: ${{ steps.codecov-cli.outputs.path }}",
-                "files: ${{ steps.coverage.outputs.report }}",
-                "group: coverage-${{ github.ref }}",
-                "cancel-in-progress: true",
-            ),
-            message="codecov-upload default branch workflow is missing",
-        )
-        _require_no_match(
-            coverage_workflow,
-            r"pull_request|CODECOV_TOKEN|pull_request_target|override_branch|override_pr|skip_validation",
-            message="codecov-upload default branch workflow has unsafe or PR-only behavior",
-        )
         if f"/{coverage_report}" not in gitignore.splitlines():
             raise ValidationError(f"codecov-upload enabled but coverage report is not ignored: {coverage_report}")
         if any(re.search(pattern, ci_tools) for pattern in forbidden_coverage_tools):

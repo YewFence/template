@@ -238,10 +238,10 @@ class TestValidateCodecovUpload:
                 required_ci_tools=('"pypi:codecov-cli" = "11"',),
             )
 
-    def test_enabled_rejects_missing_default_branch_workflow(self) -> None:
+    def test_enabled_rejects_missing_coverage_workflow(self) -> None:
         with self.harness.staged_repository("common", ("codecov-upload",)) as root:
             (root / "template/.github/workflows/coverage.yml").unlink()
-            with pytest.raises(ValidationError, match="default branch workflow is missing"):
+            with pytest.raises(ValidationError, match="coverage workflow is missing"):
                 validate_codecov_upload(
                     self._context(root, ("codecov-upload",)),
                     coverage_report="coverage.xml",
@@ -252,16 +252,36 @@ class TestValidateCodecovUpload:
                     ),
                 )
 
-    def test_enabled_rejects_unsafe_ci_permissions(self) -> None:
+    def test_enabled_rejects_unconditional_oidc_upload(self) -> None:
         with self.harness.staged_repository("common", ("codecov-upload",)) as root:
-            ci_path = root / "template/.github/workflows/ci.yml"
-            ci_path.write_text(
-                ci_path.read_text(encoding="utf-8").replace(
-                    "      contents: read", "      contents: read\n        id-token: write"
+            workflow_path = root / "template/.github/workflows/coverage.yml"
+            workflow_path.write_text(
+                workflow_path.read_text(encoding="utf-8").replace(
+                    "use_oidc: ${{ github.event_name != 'pull_request' }}",
+                    "use_oidc: true",
                 ),
                 encoding="utf-8",
             )
-            with pytest.raises(ValidationError, match="unsafe permissions or authentication"):
+            with pytest.raises(ValidationError, match="coverage workflow is missing"):
+                validate_codecov_upload(
+                    self._context(root, ("codecov-upload",)),
+                    coverage_report="coverage.xml",
+                    coverage_placeholder=(
+                        "[tasks.coverage]",
+                        "generates coverage.xml in the repository root",
+                        "exit 1",
+                    ),
+                )
+
+    def test_enabled_rejects_coverage_behavior_left_in_ci_workflow(self) -> None:
+        with self.harness.staged_repository("common", ("codecov-upload",)) as root:
+            ci_path = root / "template/.github/workflows/ci.yml"
+            ci_path.write_text(
+                ci_path.read_text(encoding="utf-8")
+                + "        run: mise run coverage\n",
+                encoding="utf-8",
+            )
+            with pytest.raises(ValidationError, match="coverage behavior remains in the CI workflow"):
                 validate_codecov_upload(
                     self._context(root, ("codecov-upload",)),
                     coverage_report="coverage.xml",

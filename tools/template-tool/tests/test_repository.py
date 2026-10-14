@@ -863,30 +863,37 @@ class TestTemplateRepository:
                 ).read_text()
                 enabled_mise = (enabled / "mise.toml").read_text()
                 enabled_ci_mise = (enabled / "mise.ci.toml").read_text()
-                assert ("  coverage:\n") in (enabled_ci)
-                assert ("if: ${{ github.event_name == 'pull_request' }}") in (enabled_ci)
-                assert ("    contents: read\n") in (enabled_ci)
-                assert ("id-token: write") not in (enabled_ci)
-                assert ("use_oidc:") not in (enabled_ci)
+                assert ("  coverage:\n") in (coverage)
+                assert ("  coverage:\n") not in (enabled_ci)
+                assert ("codecov") not in (enabled_ci)
+                assert ("pull_request:\n") in (coverage)
                 assert ("push:\n    branches: [main]") in (coverage)
                 assert ("workflow_dispatch:") in (coverage)
-                assert ("github.event_name == 'push' || github.ref == 'refs/heads/main'") in (coverage)
+                assert ("paths:\n") in (coverage)
+                assert ("github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'") in (coverage)
                 assert ("id-token: write") in (coverage)
                 assert ("group: coverage-${{ github.ref }}") in (coverage)
                 assert ("cancel-in-progress: true") in (coverage)
-                assert ("use_oidc: true") in (coverage)
+                assert ("use_oidc: ${{ github.event_name != 'pull_request' }}") in (coverage)
 
-                for workflow in (enabled_ci, coverage):
-                    assert ("uses: codecov/codecov-action@v7") in (workflow)
-                    assert ("binary: ${{ steps.codecov-cli.outputs.path }}") in (workflow)
-                    assert ("files: ${{ steps.coverage.outputs.report }}") in (workflow)
-                    assert ("disable_search: true") in (workflow)
-                    assert ("fail_ci_if_error: true") in (workflow)
-                    assert ("mise which codecovcli") in (workflow)
-                    assert ("CODECOV_TOKEN") not in (workflow)
-                    assert ("override_branch") not in (workflow)
-                    assert ("override_pr") not in (workflow)
-                    assert ("skip_validation") not in (workflow)
+                for required in (
+                    "uses: codecov/codecov-action@v7",
+                    "binary: ${{ steps.codecov-cli.outputs.path }}",
+                    "files: ${{ steps.coverage.outputs.report }}",
+                    "disable_search: true",
+                    "fail_ci_if_error: true",
+                    "mise which codecovcli",
+                ):
+                    assert (required) in (coverage)
+                    assert (required) not in (enabled_ci)
+                for forbidden in (
+                    "CODECOV_TOKEN",
+                    "override_branch",
+                    "override_pr",
+                    "skip_validation",
+                ):
+                    assert (forbidden) not in (enabled_ci)
+                    assert (forbidden) not in (coverage)
 
                 assert ("[tasks.coverage]") in (enabled_mise)
                 assert (f"/{report}") in ((enabled / ".gitignore").read_text())

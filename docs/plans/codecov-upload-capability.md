@@ -2,7 +2,7 @@
 
 ## 状态
 
-实现完成，待 GitHub Actions staging validation 和首次真实 public repository 的 live Codecov 验收。本文描述 `common`、`go-cli` 和 `rust` 三个 template profile 的 `codecov-upload` template capability；本地已完成 renderer、validation adapter、单元测试、导出 workflow 静态检查和同步检查，不要求运行完整 `mise run check`。
+实现完成，待 GitHub Actions staging validation 和首次真实 public repository 的 live Codecov 验收。本文描述 template profile 的 `codecov-upload` template capability（`common`、`go-cli` 和 `rust` 首批采用，`python` 和 `node-project` 后续接入同一合同）；本地已完成 renderer、validation adapter、单元测试、导出 workflow 静态检查和同步检查，不要求运行完整 `mise run check`。2026-10 起 PR 与默认分支 coverage 合并为单一 `coverage.yml` 工作流，本文描述合并后的合同。
 
 ## 背景
 
@@ -12,9 +12,9 @@ Codecov 上传本身是语言无关的 CI 行为，但覆盖率报告的生成�
 
 ## 设计决策
 
-### 三个 profile 都声明 capability
+### 各 profile 都声明 capability
 
-在三个 profile 的 capabilities 表中声明：
+在各 profile 的 capabilities 表中声明：
 
 ```toml
 codecov-upload = false
@@ -36,13 +36,13 @@ Codecov Action 仍然拥有 Codecov 上传协议和 GitHub 集成，包括事件
 
 这种拆分避免把 Go 的 `-coverprofile`、Rust 的 `cargo llvm-cov`、Codecov CLI 参数或用户未来选择的其他工具暴露成 template CLI 参数；调用者只需要知道 `mise run coverage` 和报告路径，维护者可以在 overlay 内替换实现。
 
-### PR tokenless 上传与默认分支 OIDC 分离
+### 单一工作流内的 PR tokenless 与默认分支 OIDC
 
-模板默认面向 public repository。Pull request coverage 使用普通 `pull_request` 触发器和 Codecov 的 tokenless 路径，job 只授予 `contents: read`，不授予 `id-token: write`，也不读取 `CODECOV_TOKEN`。workflow 不使用 `pull_request_target`，避免让不受信任的 PR 代码进入拥有 secrets、OIDC 或写权限的上下文。
+模板默认面向 public repository。PR 与默认分支 coverage 由同一个 `.github/workflows/coverage.yml` 承载：一个 `coverage` job，`pull_request` 与 `push` 到 `main` 都触发它，并在两个触发器上使用路径过滤（源码、依赖清单、mise 锁、workflow 自身），非代码改动不再触发完整测试扫描。认证按事件名切换：`use_oidc: ${{ github.event_name != 'pull_request' }}` 使默认分支 push 与受限的 `workflow_dispatch` 入口走 Codecov OIDC，PR（含 fork）回落到 tokenless 上传。workflow 不使用 `pull_request_target`，避免让不受信任的 PR 代码进入拥有 secrets 或写权限的上下文。
 
 启用 capability 的 public repository 必须在 Codecov 组织设置中允许 tokenless upload。Fork PR 无 token 时由 Codecov Action 自动检测 fork、设置 head branch、commit 和 PR 上下文并进入 tokenless 路径；同仓库 PR 的无 token 上传依赖组织级 tokenless 设置。模板不设置 `override_branch` 或 `override_pr`，因为这些 input 只用于覆盖已有 CI event metadata，不属于当前 template interface。未满足 Codecov 组织设置时，上传按 `fail_ci_if_error: true` 失败，不静默降级。
 
-默认分支 coverage 使用独立的可信上传边界，在 `push` 到 `main` 时运行，并提供 `workflow_dispatch` 人工入口。手动触发的 job 必须用 `github.ref == 'refs/heads/main'` 拒绝非默认分支 ref。该 job 授予 `contents: read` 与 `id-token: write`，重新生成 coverage report，再由 Codecov Action 使用 OIDC 上传，不消费 PR workflow 产生的 artifact。
+合并后的 job 声明 `contents: read` 与 `id-token: write`。这是有意接受的安全权衡：GitHub 对 fork PR 事件会把权限降级为只读，fork 无法铸造仓库的 OIDC token；同仓库 PR 作者本身是可信协作者。PR 路径的 `use_oidc` 求值为 false，上传不请求 OIDC。手动触发入口用 `github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'` 拒绝非默认分支 ref，且 job 不消费其他 workflow 产生的 artifact。
 
 模板不为使用者创建长期 `CODECOV_TOKEN`。Private repository 不属于默认 capability 合同，因为其上传需要额外认证；使用者必须在生成项目中自行选择 Codecov secret、组织策略或其他认证方式，并相应修改 workflow。文档必须明确指出 public repository 假设和 private repository 自定义边界。
 
@@ -50,7 +50,7 @@ Codecov Action 仍然拥有 Codecov 上传协议和 GitHub 集成，包括事件
 
 Template deliverable 声明 Codecov Action 的 major compatibility line `codecov/codecov-action@v7`；bootstrapped project 继续通过现有 pinact 流程把 Action 引用固定到 commit digest。模板不声明 Action 的 minor 或 patch tag。
 
-Codecov CLI 作为 capability-owned CI tool 由 mise 的 `pypi:codecov-cli` backend 管理，初始 compatibility line 为 `11`。共享 `shared:mise/ci/codecov-tools.toml.j2` fragment 拥有该声明，三个 profile 都通过 `mise.ci.toml` 的 `coverage_tools` slot 在 capability 启用时绑定它；同一 fragment 还为 CI 环境钉住 `python = "3.14"`，因为 codecov-cli 的依赖图（PyO3 0.27 的 test-results-parser、无 cp315 wheel 的 ijson）暂时不支持更新的解释器，上游补齐后移除该钉住。Rust 在同一 binding 中继续组合 profile-owned `cargo-llvm-cov` fragment。普通 `mise.toml` 不声明 Codecov CLI，因为本地 `mise run coverage` 不调用 uploader。Bootstrapped project 通过 mise 原生命令生成并提交精确锁定状态；workflow 不让 Codecov Action 自行选择或下载未受 mise 锁定的 CLI。该设计信任 mise 的原生工具解析、锁定和校验合同，不为 `pypi` backend 增加 capability 专属的重复校验。
+Codecov CLI 作为 capability-owned CI tool 由 mise 的 `pypi:codecov-cli` backend 管理，初始 compatibility line 为 `11`。共享 `shared:mise/ci/codecov-tools.toml.j2` fragment 拥有该声明，各 profile 都通过 `mise.ci.toml` 的 `coverage_tools` slot 在 capability 启用时绑定它；同一 fragment 还为 CI 环境钉住 `python = "3.14"`，因为 codecov-cli 的依赖图（PyO3 0.27 的 test-results-parser、无 cp315 wheel 的 ijson）暂时不支持更新的解释器，上游补齐后移除该钉住。Rust 在同一 binding 中继续组合 profile-owned `cargo-llvm-cov` fragment。普通 `mise.toml` 不声明 Codecov CLI，因为本地 `mise run coverage` 不调用 uploader。Bootstrapped project 通过 mise 原生命令生成并提交精确锁定状态；workflow 不让 Codecov Action 自行选择或下载未受 mise 锁定的 CLI。该设计信任 mise 的原生工具解析、锁定和校验合同，不为 `pypi` backend 增加 capability 专属的重复校验。
 
 Coverage workflow 使用带固定 `id` 的准备步骤运行 `mise which codecovcli`，把返回的绝对 executable path 写入 `$GITHUB_OUTPUT`，再通过 Codecov Action 的 `binary` input 引用该 step output。设置 `binary` 后 Action 跳过自身的 CLI 下载和 integrity check，这是有意的所有权转移。Action 仍然负责上传和 GitHub 集成，mise 只负责提供经过版本解析与锁定的 CLI；不新增自制 `codecov:upload` task，也不把 Codecov 上传命令复制进 workflow 或 mise task。
 
@@ -98,22 +98,11 @@ cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --locke
 
 ### 触发器和 checkout
 
-PR coverage 作为现有 `.github/workflows/ci.yml` 的 capability-owned job，并以 `if: github.event_name == 'pull_request'` 保证它只响应该 workflow 的 `pull_request` 事件。它 checkout 当前事件对应的提交，并在运行用户代码后执行 tokenless Codecov 上传，不在 `push` 或 `workflow_dispatch` 事件中运行。
-
-默认分支 coverage 使用独立 `.github/workflows/coverage.yml`，接受 `push` 到 `main` 和 `workflow_dispatch`。Coverage job 以 `github.event_name == 'push' || github.ref == 'refs/heads/main'` 限制人工触发 ref，重新 checkout 默认分支内容、生成报告并使用 OIDC 上传。
-
-两条路径都不使用 `pull_request_target`。默认分支 OIDC workflow 不下载或解析 PR workflow 生成的 artifact，从而避免把不可信 artifact 引入 privileged job。
+Coverage 完全由独立 `.github/workflows/coverage.yml` 承载，接受 `push` 到 `main`、`pull_request` 到 `main` 和 `workflow_dispatch`。push 与 pull_request 触发器都带 capability-owned 路径过滤（`coverage_paths` slot 注入 profile 源码 glob、依赖清单、mise 锁与 workflow 自身），非相关改动不触发。Coverage job 以 `github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'` 限制人工触发 ref，checkout 当前事件对应的提交后重新生成报告。两条路径都不使用 `pull_request_target`，也不下载或解析其他 workflow 生成的 artifact，避免把不可信 artifact 引入 privileged 上下文。
 
 ### 权限
 
-PR coverage job 使用最小权限：
-
-```yaml
-permissions:
-  contents: read
-```
-
-默认分支 coverage job 使用：
+Coverage job 声明：
 
 ```yaml
 permissions:
@@ -121,27 +110,22 @@ permissions:
   id-token: write
 ```
 
-`id-token: write` 只存在于可信的默认分支上传 job，不提升 PR workflow，也不出现在执行 PR 可修改 coverage task 的 job。Codecov 上传不需要 `packages: write`、`contents: write` 或 `pull-requests: write`。
+`id-token: write` 是合并模型的唯一安全权衡：fork PR 事件被 GitHub 降级为只读，fork 无法铸造 OIDC token；PR 路径的 `use_oidc` 求值为 false，实际不请求 OIDC。Codecov 上传不需要 `packages: write`、`contents: write` 或 `pull-requests: write`。
 
 ### Job 结构
 
-Shared 来源拥有 PR 与默认分支 coverage 的安全和上传结构：触发条件、权限、checkout、mise、`mise which codecovcli`、Codecov Action 和失败摘要。Profile overlay 只提供一个完整 `coverage_adapter` fragment，负责 cache、生成报告，并以固定 step `id: coverage` 暴露 `report` 路径。
+Renderer 不支持 fragment 内声明嵌套 slot，因此不为该 capability 扩展 renderer interface。独立 `coverage.yml` layout 直接声明两个语义 slot：`coverage_paths` 注入 profile 路径过滤，`coverage_adapter` 按顺序绑定 overlay adapter fragment。job 脚手架（触发条件、权限、checkout、mise、`mise which codecovcli`、Codecov Action、失败摘要）由 layout 直接拥有。`ci.yml` 不再包含任何 coverage 行为。验证面向最终渲染 workflow，不把 fragment 的文件形状当成外部合同。
 
-Renderer 不支持 fragment 内声明嵌套 slot，因此不为该 capability 扩展 renderer interface。`ci.yml` 的单个语义 `coverage_job` slot 按顺序绑定 shared PR job 前段、overlay `coverage_adapter` 和 shared PR job 后段；三段共同组成完整 job。独立 `coverage.yml` layout 直接声明 `coverage_adapter` slot。两个位置保持相同的 adapter 缩进合同并复用同一 overlay fragment。验证面向最终渲染 workflow，不把三段 fragment 的文件形状当成外部合同。
-
-PR coverage job 至少包含：
+Coverage job 至少包含：
 
 1. checkout；
 2. 使用现有 `jdx/mise-action` 安装 profile 需要的 CI tools 和 mise 管理的 Codecov CLI；
-3. profile-specific cache（Go 使用 Go build/module cache，Rust 使用 Rust cache，common 不添加假 cache）；
-4. profile `coverage_adapter`，其固定 step `id: coverage` 运行 `mise run coverage` 并暴露 `report` 路径；
-5. 运行 `mise which codecovcli` 并通过 step output 暴露 executable 的绝对路径；
-6. `codecov/codecov-action@v7` 通过 `binary` 使用该 executable，引用 `${{ steps.coverage.outputs.report }}`，不启用 OIDC，也不设置 `override_branch` 或 `override_pr`；
-7. 失败摘要，确保缺失报告和 Codecov 错误能从 Actions 日志定位。
+3. profile `coverage_adapter`，其固定 step `id: coverage` 运行 `mise run coverage` 并暴露 `report` 路径（Go/Rust adapter 自带语言 cache，common 不添加假 cache）；
+4. 运行 `mise which codecovcli` 并通过 step output 暴露 executable 的绝对路径；
+5. `codecov/codecov-action@v7` 通过 `binary` 使用该 executable，引用 `${{ steps.coverage.outputs.report }}`，`use_oidc` 按事件名条件化，也不设置 `override_branch` 或 `override_pr`；
+6. 失败摘要，确保缺失报告和 Codecov 错误能从 Actions 日志定位。
 
-默认分支 coverage workflow 使用相同的 `coverage_adapter`、报告路径和 CLI 安装边界，但 Codecov Action 启用 OIDC，job 拥有 `id-token: write`，并设置 `group: coverage-${{ github.ref }}` 与 `cancel-in-progress: true`；触发器不包含 `pull_request`。
-
-上传步骤应显式设置单个 `report` 文件并关闭无关的自动搜索，避免工作区中其他工具生成的文件被误上传。两个上传步骤都设置 `fail_ci_if_error: true`，由 Codecov 的上传结果直接决定 job 成败；workflow 不自行定义 coverage threshold、patch/project 策略或替代 Codecov status。外部 `binary` 不搭配 `skip_validation`：Action 保留默认的系统依赖检查，mise 负责 CLI 的版本解析、锁定和校验所有权。Action 只声明确切 major line 并沿用仓库的 pinact 流程；unbootstrapped template 不包含 Action digest 或 mise lock。
+上传步骤应显式设置单个 `report` 文件并关闭无关的自动搜索，避免工作区中其他工具生成的文件被误上传。上传步骤设置 `fail_ci_if_error: true`，由 Codecov 的上传结果直接决定 job 成败；workflow 不自行定义 coverage threshold、patch/project 策略或替代 Codecov status。外部 `binary` 不搭配 `skip_validation`：Action 保留默认的系统依赖检查，mise 负责 CLI 的版本解析、锁定和校验所有权。Action 只声明确切 major line 并沿用仓库的 pinact 流程；unbootstrapped template 不包含 Action digest 或 mise lock。workflow 设置 `group: coverage-${{ github.ref }}` 与 `cancel-in-progress: true`。
 
 ### mise 所有权
 
@@ -151,48 +135,47 @@ workflow 不复制 `go test`、`cargo llvm-cov`、用户自定义 coverage 命�
 
 | 来源 | 规划内容 |
 | --- | --- |
-| `templates.toml` | 三个 profile 声明 capability；PR CI、默认分支 coverage workflow、mise 和 `.gitignore` 的 conditional binding |
-| `shared/layouts/.github/workflows/ci.yml.j2` | 保留单个语义 `coverage_job` slot；binding 组合 shared PR job 前段、overlay adapter 和 shared PR job 后段 |
-| `shared/layouts/.github/workflows/coverage.yml.j2` | 拥有默认分支 OIDC coverage workflow 的稳定结构、`push`/`workflow_dispatch` 触发器、`main` ref guard、并发策略，并直接声明 `coverage_adapter` slot |
+| `templates.toml` | profile 声明 capability；单一 coverage workflow、mise 和 `.gitignore` 的 conditional binding |
+| `shared/layouts/.github/workflows/ci.yml.j2` | 不包含任何 coverage slot；coverage 行为全部由独立 workflow 承载 |
+| `shared/layouts/.github/workflows/coverage.yml.j2` | 拥有合一 coverage workflow 的稳定结构：push/PR 双触发器、路径过滤 slot、`main` ref guard、并发策略、job 权限、mise 启动、CLI 接线、上传与失败摘要 |
 | `shared/layouts/mise.ci.toml.j2` | 使用现有语义 `coverage_tools` slot 接收 capability-owned CI 工具 |
-| `shared/fragments/mise/ci/codecov-tools.toml.j2` | 统一声明 `python = "3.14"` 与 `"pypi:codecov-cli" = "11"`，供三个 profile 复用 |
+| `shared/fragments/mise/ci/codecov-tools.toml.j2` | 统一声明 `python = "3.14"` 与 `"pypi:codecov-cli" = "11"`，供各 profile 复用 |
 | `overlays/*/fragments/mise/` | `coverage` task 和必要的 profile coverage 工具声明；Go/Rust 为真实 adapter，common 为明确失败的占位 adapter |
-| `overlays/*/fragments/workflows/` | 单个完整 `coverage_adapter`，包括 profile cache、报告生成 task 和固定 `report` output；由 PR 与默认分支 workflow 复用，不重复上传、权限或认证实现 |
-| `shared/fragments/workflows/coverage/` | PR job 前段与后段；拥有共享安全、CLI 接线、上传和失败摘要，不声明嵌套 slot |
+| `overlays/*/fragments/workflows/coverage/` | 单个完整 `coverage_adapter`（含 profile cache 与报告生成，固定 `report` output）与 `coverage_paths` 路径过滤；由合一 workflow 消费，不重复上传、权限或认证实现 |
+| `shared/fragments/workflows/coverage/common-paths.yml.j2` | common profile 的最小路径过滤（mise 锁与 workflow 自身） |
 | `shared/fragments/docs-ignored-paths.j2` 或 profile overlay | 忽略 `coverage.out`、`lcov.info`、`coverage.xml` 等 capability 生成的临时报告 |
 | `overlays/*/mise.toml` | 按 enabled capability 检查任务、工具、workflow 和关闭时的缺席 |
 
 是否把 Codecov badge 加入 README 不属于上传 capability 的必要输出。第一版不生成 badge，避免把 Codecov project visibility、默认 branch 和 README 文案耦合到上传合同；未来如果确有稳定需求，可以单独增加 capability-owned README fragment。
 
-面向使用者的稳定认证、引导和 `common` adapter 合同由 monorepo 的 `docs/guides/codecov-upload.md` 统一拥有。它不作为 capability-owned README fragment 渲染进生成项目；根文档索引、根 README 和三个 overlay README 链接该指南。生成项目只保留 workflow 与 `mise run coverage` 合同，不复制维护指南全文。
+面向使用者的稳定认证、引导和 `common` adapter 合同由 monorepo 的 `docs/guides/codecov-upload.md` 统一拥有。它不作为 capability-owned README fragment 渲染进生成项目；根文档索引、根 README 和各 overlay README 链接该指南。生成项目只保留 workflow 与 `mise run coverage` 合同，不复制维护指南全文。
 
 ## 验证合同
 
-三个 validation adapter 都需要展开 `codecov-upload` 的启用和关闭状态。
+各 validation adapter 都需要展开 `codecov-upload` 的启用和关闭状态。
 
 启用时：
 
 - `mise` task 列表含 `coverage`；
 - `mise.ci.toml` 含来自 shared fragment 的 capability-owned `"pypi:codecov-cli" = "11"` tool declaration 与 `python = "3.14"` interpreter 钉住；普通 `mise.toml` 不含 Codecov CLI；
 - Rust 的 `coverage_tools` binding 同时组合 shared Codecov CLI 与 overlay `cargo-llvm-cov`，Go 和 common 不伪造语言 coverage tool；
-- `.github/workflows/ci.yml` 含 coverage job；
-- PR coverage job 含 `if: github.event_name == 'pull_request'`，在 CI workflow 的 `push` 和 `workflow_dispatch` 事件中跳过；
+- `.github/workflows/ci.yml` 不含任何 coverage 行为（无 codecov、无 `id-token: write`、无 `mise run coverage`）；
+- `.github/workflows/coverage.yml` 是唯一 coverage 工作流：接受 `push` 到 `main`、`pull_request` 到 `main` 和 `workflow_dispatch`，两个自动触发器都带 `paths` 路径过滤并包含 workflow 自身；
+- coverage job 的 `if` 为 `github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'`，人工触发只允许 `main` ref；
+- coverage job 权限含 `contents: read` 与 `id-token: write`，`use_oidc: ${{ github.event_name != 'pull_request' }}` 保证 PR 走 tokenless；
 - `coverage_adapter` 以固定 `coverage` step 调用 `mise run coverage` 并输出 `report`，不在 shared workflow 中复制 profile 命令；
-- PR coverage job 权限只含 `contents: read`，不含 `id-token: write` 或 Codecov secret；
-- PR Codecov Action 依赖 GitHub event 自动识别，不设置 `override_branch` 或 `override_pr`；public repository 使用说明明确要求在 Codecov 组织中允许 tokenless upload；
-- 独立默认分支 coverage workflow 接受 `push` 到 `main` 和 `workflow_dispatch`，不接受 `pull_request`；人工触发时只允许 `github.ref == 'refs/heads/main'`；
-- 默认分支 coverage job 含 `contents: read` 与 `id-token: write`，并启用 OIDC；
-- 两条路径都复用同一个 `coverage_adapter` 和 `mise which codecovcli` step output，向 `binary` 传入绝对 executable path；上传步骤引用 `steps.coverage.outputs.report`；
-- 两条上传步骤不设置 `skip_validation`，保留 Codecov Action 默认的系统依赖检查；
-- renderer 不需要支持 fragment 内嵌套 slot；PR `coverage_job` 的三段 binding 和默认分支 layout 的直接 adapter slot 都渲染为结构完整的 workflow；
+- Codecov Action 依赖 GitHub event 自动识别，不设置 `override_branch` 或 `override_pr`；public repository 使用说明明确要求在 Codecov 组织中允许 tokenless upload；
+- workflow 复用 `mise which codecovcli` step output，向 `binary` 传入绝对 executable path；上传步骤引用 `steps.coverage.outputs.report`；
+- 上传步骤不设置 `skip_validation`，保留 Codecov Action 默认的系统依赖检查；
+- renderer 不需要支持 fragment 内嵌套 slot；`coverage_paths` 与 `coverage_adapter` 两个 slot 渲染为结构完整的 workflow；
 - Action 引用为 `codecov/codecov-action@v7`，bootstrapped project 的 pinact 流程负责 digest；
-- 两条上传路径都含 `fail_ci_if_error: true`；
+- 上传步骤含 `fail_ci_if_error: true`；
 - 对应报告路径被 `.gitignore` 忽略；
 - Go/Rust 的必要工具只存在于启用分支，common 不伪造语言工具。
 
 关闭时：
 
-- `coverage` task、PR coverage job、默认分支 coverage workflow、Codecov CLI tool、Codecov Action 和 capability-owned ignore paths 均不存在；
+- `coverage` task、coverage workflow、Codecov CLI tool、Codecov Action 和 capability-owned ignore paths 均不存在；
 - 现有主 CI check、audit、release 和 docs job 不改变行为；
 - 不残留 `id-token: write` 或 Codecov 相关 secret 引用。
 
@@ -229,11 +212,11 @@ Renderer 合同、静态 workflow 合同、报告生成和完整 staging matrix 
 ## 完成条件
 
 - `common`、`go-cli`、`rust` 的 capability profile 都声明 `codecov-upload = false`。
-- 三个 profile 的启用和关闭分支都通过 renderer 合同验证和 validation adapter 静态检查。
+- 各 profile 的启用和关闭分支都通过 renderer 合同验证和 validation adapter 静态检查。
 - Go 和 Rust 的 coverage task 能生成约定报告；common 的占位 task 打印替换说明并以非零状态失败，直到使用者提供真实报告生成命令。
 - 每个启用的 coverage adapter 恰好生成一个报告，并通过固定 `report` output 提供给 shared uploader。
-- PR coverage job 在已启用 Codecov 组织级 tokenless upload 的 public repository 中无 token 上传且不拥有 OIDC，默认分支 coverage workflow 单独使用 OIDC；两者都使用 mise 锁定的 Codecov CLI `11`、`codecov/codecov-action@v7`、明确文件上传和失败阻断语义。
-- PR coverage job 只响应 `pull_request`；默认分支 coverage workflow 的人工触发只执行 `main` ref。
+- coverage workflow 在已启用 Codecov 组织级 tokenless upload 的 public repository 中，PR（含 fork）无 token 上传，默认分支 push 与人工入口使用 OIDC；两者都使用 mise 锁定的 Codecov CLI `11`、`codecov/codecov-action@v7`、明确文件上传和失败阻断语义。
+- coverage workflow 同时接受 `push` 到 `main` 和 `pull_request`，两个触发器都带路径过滤；人工触发只执行 `main` ref。
 - 默认 preview 不包含 Codecov 行为，启用 capability 的 staging 只验证对应组合，不生成额外 snapshot。
 - GitHub Actions 完整 staging validation 通过；本地只运行渲染、同步检查及必要的工具单元测试。
 
