@@ -85,7 +85,7 @@ def validate(context: StagingContext) -> None:
         context,
         coverage_report="lcov.info",
         required_ci_tools=(
-            '"pipx:codecov-cli" = "11"',
+            '"pypi:codecov-cli" = "11"',
             '"cargo:cargo-llvm-cov" = "0.8"',
         ),
     )

@@ -41,7 +41,7 @@ def validate(context: StagingContext) -> None:
             "exit 1",
         ),
         forbidden_coverage_tools=(r"cargo-llvm-cov", r"golang\.org/.*/cover"),
-        required_ci_tools=('"pipx:codecov-cli" = "11"',),
+        required_ci_tools=('"pypi:codecov-cli" = "11"',),
     )
 
     context = context.with_environment(MISE_LOCKED=None)

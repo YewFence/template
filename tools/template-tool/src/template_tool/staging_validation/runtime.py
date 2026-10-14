@@ -275,7 +275,7 @@ def validate_codecov_upload(
             "coverage" in context.task_names()
             or re.search(r"codecov|id-token: write|mise run coverage", ci_workflow)
             or context.exists(".github/workflows/coverage.yml")
-            or "pipx:codecov-cli" in ci_tools
+            or "pypi:codecov-cli" in ci_tools
             or f"/{coverage_report}" in gitignore.splitlines()
         ):
             raise ValidationError("codecov-upload disabled but coverage behavior remains")

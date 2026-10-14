@@ -1,1 +1,3 @@
-"pipx:codecov-cli" = "11"
+# codecov-cli's dependency graph has no Python 3.15 wheels yet (PyO3 0.27 in test-results-parser, sdist-only ijson); keep the CI interpreter below the project's python line until upstream catches up
+python = "3.14"
+"pypi:codecov-cli" = "11"

@@ -407,7 +407,7 @@ class StagingHarness:
                     )
         ci_tool_lines = ["[tools]", 'git-cliff = "latest"']
         if codecov_enabled:
-            ci_tool_lines.append('"pipx:codecov-cli" = "11"')
+            ci_tool_lines.append('"pypi:codecov-cli" = "11"')
             if profile == "rust":
                 ci_tool_lines.append('"cargo:cargo-llvm-cov" = "0.8"')
         if profile == "rust" and crates_io_enabled:

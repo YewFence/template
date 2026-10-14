@@ -121,7 +121,7 @@ def validate(context: StagingContext) -> None:
     validate_codecov_upload(
         context,
         coverage_report="coverage.out",
-        required_ci_tools=('"pipx:codecov-cli" = "11"',),
+        required_ci_tools=('"pypi:codecov-cli" = "11"',),
     )
     _validate_container_image_publish(context)
 

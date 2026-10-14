@@ -50,7 +50,7 @@ Codecov Action 仍然拥有 Codecov 上传协议和 GitHub 集成，包括事件
 
 Template deliverable 声明 Codecov Action 的 major compatibility line `codecov/codecov-action@v7`；bootstrapped project 继续通过现有 pinact 流程把 Action 引用固定到 commit digest。模板不声明 Action 的 minor 或 patch tag。
 
-Codecov CLI 作为 capability-owned CI tool 由 mise 的 `pipx:codecov-cli` backend 管理，初始 compatibility line 为 `11`。共享 `shared:mise/ci/codecov-tools.toml.j2` fragment 拥有该声明，三个 profile 都通过 `mise.ci.toml` 的 `coverage_tools` slot 在 capability 启用时绑定它；Rust 在同一 binding 中继续组合 profile-owned `cargo-llvm-cov` fragment。普通 `mise.toml` 不声明 Codecov CLI，因为本地 `mise run coverage` 不调用 uploader。Bootstrapped project 通过 mise 原生命令生成并提交精确锁定状态；workflow 不让 Codecov Action 自行选择或下载未受 mise 锁定的 CLI。该设计信任 mise 的原生工具解析、锁定和校验合同，不为 `pipx` backend 增加 capability 专属的重复校验。
+Codecov CLI 作为 capability-owned CI tool 由 mise 的 `pypi:codecov-cli` backend 管理，初始 compatibility line 为 `11`。共享 `shared:mise/ci/codecov-tools.toml.j2` fragment 拥有该声明，三个 profile 都通过 `mise.ci.toml` 的 `coverage_tools` slot 在 capability 启用时绑定它；同一 fragment 还为 CI 环境钉住 `python = "3.14"`，因为 codecov-cli 的依赖图（PyO3 0.27 的 test-results-parser、无 cp315 wheel 的 ijson）暂时不支持更新的解释器，上游补齐后移除该钉住。Rust 在同一 binding 中继续组合 profile-owned `cargo-llvm-cov` fragment。普通 `mise.toml` 不声明 Codecov CLI，因为本地 `mise run coverage` 不调用 uploader。Bootstrapped project 通过 mise 原生命令生成并提交精确锁定状态；workflow 不让 Codecov Action 自行选择或下载未受 mise 锁定的 CLI。该设计信任 mise 的原生工具解析、锁定和校验合同，不为 `pypi` backend 增加 capability 专属的重复校验。
 
 Coverage workflow 使用带固定 `id` 的准备步骤运行 `mise which codecovcli`，把返回的绝对 executable path 写入 `$GITHUB_OUTPUT`，再通过 Codecov Action 的 `binary` input 引用该 step output。设置 `binary` 后 Action 跳过自身的 CLI 下载和 integrity check，这是有意的所有权转移。Action 仍然负责上传和 GitHub 集成，mise 只负责提供经过版本解析与锁定的 CLI；不新增自制 `codecov:upload` task，也不把 Codecov 上传命令复制进 workflow 或 mise task。
 
@@ -155,7 +155,7 @@ workflow 不复制 `go test`、`cargo llvm-cov`、用户自定义 coverage 命�
 | `shared/layouts/.github/workflows/ci.yml.j2` | 保留单个语义 `coverage_job` slot；binding 组合 shared PR job 前段、overlay adapter 和 shared PR job 后段 |
 | `shared/layouts/.github/workflows/coverage.yml.j2` | 拥有默认分支 OIDC coverage workflow 的稳定结构、`push`/`workflow_dispatch` 触发器、`main` ref guard、并发策略，并直接声明 `coverage_adapter` slot |
 | `shared/layouts/mise.ci.toml.j2` | 使用现有语义 `coverage_tools` slot 接收 capability-owned CI 工具 |
-| `shared/fragments/mise/ci/codecov-tools.toml.j2` | 统一声明 `"pipx:codecov-cli" = "11"`，供三个 profile 复用 |
+| `shared/fragments/mise/ci/codecov-tools.toml.j2` | 统一声明 `python = "3.14"` 与 `"pypi:codecov-cli" = "11"`，供三个 profile 复用 |
 | `overlays/*/fragments/mise/` | `coverage` task 和必要的 profile coverage 工具声明；Go/Rust 为真实 adapter，common 为明确失败的占位 adapter |
 | `overlays/*/fragments/workflows/` | 单个完整 `coverage_adapter`，包括 profile cache、报告生成 task 和固定 `report` output；由 PR 与默认分支 workflow 复用，不重复上传、权限或认证实现 |
 | `shared/fragments/workflows/coverage/` | PR job 前段与后段；拥有共享安全、CLI 接线、上传和失败摘要，不声明嵌套 slot |
@@ -173,7 +173,7 @@ workflow 不复制 `go test`、`cargo llvm-cov`、用户自定义 coverage 命�
 启用时：
 
 - `mise` task 列表含 `coverage`；
-- `mise.ci.toml` 含来自 shared fragment 的 capability-owned `"pipx:codecov-cli" = "11"` tool declaration；普通 `mise.toml` 不含 Codecov CLI；
+- `mise.ci.toml` 含来自 shared fragment 的 capability-owned `"pypi:codecov-cli" = "11"` tool declaration 与 `python = "3.14"` interpreter 钉住；普通 `mise.toml` 不含 Codecov CLI；
 - Rust 的 `coverage_tools` binding 同时组合 shared Codecov CLI 与 overlay `cargo-llvm-cov`，Go 和 common 不伪造语言 coverage tool；
 - `.github/workflows/ci.yml` 含 coverage job；
 - PR coverage job 含 `if: github.event_name == 'pull_request'`，在 CI workflow 的 `push` 和 `workflow_dispatch` 事件中跳过；

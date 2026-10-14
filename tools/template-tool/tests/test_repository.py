@@ -890,7 +890,7 @@ class TestTemplateRepository:
 
                 assert ("[tasks.coverage]") in (enabled_mise)
                 assert (f"/{report}") in ((enabled / ".gitignore").read_text())
-                assert ('"pipx:codecov-cli" = "11"') in (enabled_ci_mise)
+                assert ('"pypi:codecov-cli" = "11"') in (enabled_ci_mise)
                 if template == "rust":
                     assert ('"cargo:cargo-llvm-cov" = "0.8"') in (enabled_ci_mise)
                 else:

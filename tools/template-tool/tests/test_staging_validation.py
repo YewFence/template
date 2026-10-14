@@ -235,7 +235,7 @@ class TestValidateCodecovUpload:
                     "exit 1",
                 ),
                 forbidden_coverage_tools=(r"cargo-llvm-cov", r"golang\.org/.*/cover"),
-                required_ci_tools=('"pipx:codecov-cli" = "11"',),
+                required_ci_tools=('"pypi:codecov-cli" = "11"',),
             )
 
     def test_enabled_rejects_missing_default_branch_workflow(self) -> None:
@@ -309,7 +309,7 @@ class TestValidateCodecovUpload:
         with self.harness.staged_repository("common", ("codecov-upload",)) as root:
             mise_path = root / "template/mise.toml"
             mise_path.write_text(
-                mise_path.read_text(encoding="utf-8") + '"pipx:codecov-cli" = "11"\n',
+                mise_path.read_text(encoding="utf-8") + '"pypi:codecov-cli" = "11"\n',
                 encoding="utf-8",
             )
             with pytest.raises(ValidationError, match="CLI tool ownership is incorrect"):
@@ -321,7 +321,7 @@ class TestValidateCodecovUpload:
                         "generates coverage.xml in the repository root",
                         "exit 1",
                     ),
-                    required_ci_tools=('"pipx:codecov-cli" = "11"',),
+                    required_ci_tools=('"pypi:codecov-cli" = "11"',),
                 )
 
     def test_enabled_rejects_incomplete_placeholder_contract(self) -> None:
