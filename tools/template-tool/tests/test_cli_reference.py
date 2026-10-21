@@ -13,6 +13,7 @@ class TestRenderReference:
     def test_contains_every_entry_point(self) -> None:
         content = cli_reference.render_reference()
         for prog in (
+            "list-templates",
             "init-project",
             "apply-template",
             "export-template",
@@ -22,7 +23,15 @@ class TestRenderReference:
             "template-tool",
         ):
             assert f"`{prog}`" in content
-        for subcommand in ("render", "check", "apply", "init", "export", "capabilities"):
+        for subcommand in (
+            "render",
+            "check",
+            "apply",
+            "init",
+            "export",
+            "templates",
+            "capabilities",
+        ):
             assert f"`template-tool {subcommand}`" in content
 
     def test_embeds_verbatim_help_output(self) -> None:

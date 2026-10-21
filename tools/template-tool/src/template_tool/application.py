@@ -69,6 +69,9 @@ class SelectedTemplate:
     policy: ApplyPolicy
     templates: TemplateRepository
 
+    def template_names(self) -> tuple[str, ...]:
+        return self.templates.template_names
+
     def required_metadata(self, template: str) -> tuple[str, ...]:
         try:
             self.templates.select(template)

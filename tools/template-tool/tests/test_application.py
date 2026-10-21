@@ -22,7 +22,15 @@ from template_tool.application import (
 )
 from template_tool.bootstrap import capabilities_main as bootstrap_capabilities_main
 from template_tool.bootstrap import export_main as bootstrap_export_main
-from template_tool.cli import apply_main, capabilities_main, export_main, init_main, main
+from template_tool.bootstrap import templates_main as bootstrap_templates_main
+from template_tool.cli import (
+    apply_main,
+    capabilities_main,
+    export_main,
+    init_main,
+    main,
+    templates_main,
+)
 
 
 class TestApplyTemplate:
@@ -591,6 +599,86 @@ class TestApplyTemplate:
             })
         assert (tuple(current.iterdir())) == ((sentinel,))
         assert (sentinel.read_text(encoding="utf-8")) == ("unchanged\n")
+
+    def test_template_discovery_lists_profiles_without_mutating_repository(self) -> None:
+        current = self.root / "current"
+        current.mkdir()
+        sentinel = current / "sentinel.txt"
+        sentinel.write_text("unchanged\n", encoding="utf-8")
+        commit = self._git(self.source, "rev-parse", "HEAD", capture=True)
+        original_cwd = Path.cwd()
+        text_output = StringIO()
+        json_output = StringIO()
+        try:
+            os.chdir(current)
+            with redirect_stdout(text_output):
+                templates_main(["--repo", str(self.source), "--ref", "main"])
+            with redirect_stdout(json_output):
+                templates_main(
+                    [
+                        "--repo",
+                        str(self.source),
+                        "--ref",
+                        "main",
+                        "--json",
+                        "--source-checkout",
+                        str(self.source),
+                    ]
+                )
+        finally:
+            os.chdir(original_cwd)
+
+        assert (text_output.getvalue()) == (
+            f"Repository: {self.source}\n"
+            "Ref: main\n"
+            f"Template-Commit: {commit}\n"
+            "Template: example\n"
+            "  Capability: docs-site (default: disabled)\n"
+            "  Capability: release (default: disabled)\n"
+            "  Required-Metadata: project_name, binary_name\n"
+        )
+        assert (json.loads(json_output.getvalue())) == ({
+            "repository": str(self.source),
+            "ref": "main",
+            "commit": commit,
+            "templates": [
+                {
+                    "name": "example",
+                    "capabilities": [
+                        {"name": "docs-site", "default_enabled": False},
+                        {"name": "release", "default_enabled": False},
+                    ],
+                    "required_metadata": ["project_name", "binary_name"],
+                }
+            ],
+        })
+        assert (tuple(current.iterdir())) == ((sentinel,))
+        assert (sentinel.read_text(encoding="utf-8")) == ("unchanged\n")
+
+    def test_template_discovery_bootstrap_uses_selected_ref_engine(
+        self, mocker: MockerFixture
+    ) -> None:
+        run_selected_engine = mocker.patch("template_tool.bootstrap._run_selected_engine")
+        arguments = ["--ref", "main", "--json"]
+
+        bootstrap_templates_main(arguments)
+
+        run_selected_engine.assert_called_once_with(
+            "templates", arguments, templates_main
+        )
+
+    def test_umbrella_template_discovery_uses_selected_ref_engine(
+        self, mocker: MockerFixture
+    ) -> None:
+        run_selected_templates = mocker.patch(
+            "template_tool.bootstrap.templates_main"
+        )
+
+        main(["templates", "--repo", str(self.source), "--ref", "main", "--json"])
+
+        run_selected_templates.assert_called_once_with(
+            ["--repo", str(self.source), "--ref", "main", "--json"]
+        )
 
     def test_capability_discovery_bootstrap_uses_selected_ref_engine(
         self, mocker: MockerFixture

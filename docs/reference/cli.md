@@ -12,6 +12,32 @@ uvx --from "git+https://github.com/YewFence/template.git@main#subdirectory=tools
 
 ## User Commands
 
+### `list-templates`
+
+```text
+usage: list-templates [-h] [--repo REPO] --ref REF [--json]
+
+Print every template profile the selected ref declares, with each profile's
+capabilities, their default state, and the metadata fields it requires.
+Read-only: the command only reads the contract of the selected ref. It
+requires no Git repository and changes nothing. Use it to discover the valid
+--template values instead of relying on a remembered list.
+
+options:
+  -h, --help   show this help message and exit
+  --repo REPO  template monorepo to fetch from (default:
+               https://github.com/YewFence/template.git)
+  --ref REF    Git ref of the template monorepo to select, e.g. main or a
+               release tag; the template contract and renderer always come
+               from this ref
+  --json       print the contract as a stable single-line JSON object for
+               scripting
+
+examples:
+  uvx --from "git+https://github.com/YewFence/template.git@main#subdirectory=tools/template-tool" list-templates --ref main
+  uvx --from "git+https://github.com/YewFence/template.git@main#subdirectory=tools/template-tool" list-templates --ref main --json
+```
+
 ### `init-project`
 
 ```text
@@ -48,8 +74,8 @@ options:
   --ref REF             Git ref of the template monorepo to select, e.g. main
                         or a release tag; the template contract and renderer
                         always come from this ref
-  --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, python, go-cli, rust, node-project)
+  --template TEMPLATE   template profile declared in templates.toml; list the
+                        valid values with list-templates
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -133,8 +159,8 @@ options:
   --ref REF             Git ref of the template monorepo to select, e.g. main
                         or a release tag; the template contract and renderer
                         always come from this ref
-  --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, python, go-cli, rust, node-project)
+  --template TEMPLATE   template profile declared in templates.toml; list the
+                        valid values with list-templates
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -219,8 +245,8 @@ options:
   --ref REF             Git ref of the template monorepo to select, e.g. main
                         or a release tag; the template contract and renderer
                         always come from this ref
-  --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, python, go-cli, rust, node-project)
+  --template TEMPLATE   template profile declared in templates.toml; list the
+                        valid values with list-templates
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -280,10 +306,10 @@ options:
   --ref REF            Git ref of the template monorepo to select, e.g. main
                        or a release tag; the template contract and renderer
                        always come from this ref
-  --template TEMPLATE  template profile declared in templates.toml (e.g.
-                       common, python, go-cli, rust, node-project)
-  --json               print the capability contract as a stable single-line
-                       JSON object for scripting
+  --template TEMPLATE  template profile declared in templates.toml; list the
+                       valid values with list-templates
+  --json               print the contract as a stable single-line JSON object
+                       for scripting
 
 examples:
   uvx --from "git+https://github.com/YewFence/template.git@main#subdirectory=tools/template-tool" list-template-capabilities --ref main --template rust
@@ -332,20 +358,22 @@ options:
 ### `template-tool`
 
 ```text
-usage: template-tool [-h] {render,check,apply,init,export,capabilities} ...
+usage: template-tool [-h]
+                     {render,check,apply,init,export,templates,capabilities} ...
 
 Unified entry point for all template tool commands. The user-facing commands
-are also available as standalone entry points (init-project, apply-template,
-export-template, list-template-capabilities) that bootstrap into the selected
-ref's own locked tool version before running.
+are also available as standalone entry points (list-templates, init-project,
+apply-template, export-template, list-template-capabilities) that bootstrap
+into the selected ref's own locked tool version before running.
 
 positional arguments:
-  {render,check,apply,init,export,capabilities}
+  {render,check,apply,init,export,templates,capabilities}
     render              render template previews from sources
     check               validate templates in disposable staging
     apply               apply a template to an existing repository
     init                initialize a new project from a template
     export              export a standalone candidate tree
+    templates           list every declared template profile
     capabilities        list a template's declared capabilities
 
 options:
@@ -427,8 +455,8 @@ options:
   --ref REF             Git ref of the template monorepo to select, e.g. main
                         or a release tag; the template contract and renderer
                         always come from this ref
-  --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, python, go-cli, rust, node-project)
+  --template TEMPLATE   template profile declared in templates.toml; list the
+                        valid values with list-templates
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -517,8 +545,8 @@ options:
   --ref REF             Git ref of the template monorepo to select, e.g. main
                         or a release tag; the template contract and renderer
                         always come from this ref
-  --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, python, go-cli, rust, node-project)
+  --template TEMPLATE   template profile declared in templates.toml; list the
+                        valid values with list-templates
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -604,8 +632,8 @@ options:
   --ref REF             Git ref of the template monorepo to select, e.g. main
                         or a release tag; the template contract and renderer
                         always come from this ref
-  --template TEMPLATE   template profile declared in templates.toml (e.g.
-                        common, python, go-cli, rust, node-project)
+  --template TEMPLATE   template profile declared in templates.toml; list the
+                        valid values with list-templates
   --project-name PROJECT_NAME
                         project display name (metadata field: project_name)
   --description DESCRIPTION
@@ -648,6 +676,32 @@ The exported tree is an unbootstrapped template blueprint: dependency lock
 state and GitHub Action digests are not generated.
 ```
 
+#### `template-tool templates`
+
+```text
+usage: template-tool templates [-h] [--repo REPO] --ref REF [--json]
+
+Print every template profile the selected ref declares, with each profile's
+capabilities, their default state, and the metadata fields it requires.
+Read-only: the command only reads the contract of the selected ref. It
+requires no Git repository and changes nothing. Use it to discover the valid
+--template values instead of relying on a remembered list.
+
+options:
+  -h, --help   show this help message and exit
+  --repo REPO  template monorepo to fetch from (default:
+               https://github.com/YewFence/template.git)
+  --ref REF    Git ref of the template monorepo to select, e.g. main or a
+               release tag; the template contract and renderer always come
+               from this ref
+  --json       print the contract as a stable single-line JSON object for
+               scripting
+
+examples:
+  uvx --from "git+https://github.com/YewFence/template.git@main#subdirectory=tools/template-tool" list-templates --ref main
+  uvx --from "git+https://github.com/YewFence/template.git@main#subdirectory=tools/template-tool" list-templates --ref main --json
+```
+
 #### `template-tool capabilities`
 
 ```text
@@ -665,10 +719,10 @@ options:
   --ref REF            Git ref of the template monorepo to select, e.g. main
                        or a release tag; the template contract and renderer
                        always come from this ref
-  --template TEMPLATE  template profile declared in templates.toml (e.g.
-                       common, python, go-cli, rust, node-project)
-  --json               print the capability contract as a stable single-line
-                       JSON object for scripting
+  --template TEMPLATE  template profile declared in templates.toml; list the
+                       valid values with list-templates
+  --json               print the contract as a stable single-line JSON object
+                       for scripting
 
 examples:
   uvx --from "git+https://github.com/YewFence/template.git@main#subdirectory=tools/template-tool" list-template-capabilities --ref main --template rust

@@ -92,7 +92,18 @@ uvx \
   ./rust-template-main
 ```
 
-### Query Capabilities
+### Query Templates and Capabilities
+
+List the profiles a ref declares:
+
+```bash
+uvx \
+  --from "git+https://github.com/YewFence/template.git@main#subdirectory=tools/template-tool" \
+  list-templates \
+  --ref main
+```
+
+Then read one profile's capabilities and defaults:
 
 ```bash
 uvx \

@@ -102,6 +102,18 @@ examples:
   {_UVX_FROM} list-template-capabilities --ref main --template rust
   {_UVX_FROM} list-template-capabilities --ref main --template rust --json"""
 
+_TEMPLATES_DESCRIPTION = """\
+Print every template profile the selected ref declares, with each profile's
+capabilities, their default state, and the metadata fields it requires.
+Read-only: the command only reads the contract of the selected ref. It
+requires no Git repository and changes nothing. Use it to discover the valid
+--template values instead of relying on a remembered list."""
+
+_TEMPLATES_EPILOG = f"""\
+examples:
+  {_UVX_FROM} list-templates --ref main
+  {_UVX_FROM} list-templates --ref main --json"""
+
 _RENDER_DESCRIPTION = """\
 Render template previews from the shared/ and overlays/ sources into
 templates/<name>/ in the local monorepo checkout. Maintenance command; users
@@ -114,9 +126,9 @@ disposable staging. Maintenance command; normally run by monorepo CI."""
 
 _UMBRELLA_DESCRIPTION = """\
 Unified entry point for all template tool commands. The user-facing commands
-are also available as standalone entry points (init-project, apply-template,
-export-template, list-template-capabilities) that bootstrap into the selected
-ref's own locked tool version before running."""
+are also available as standalone entry points (list-templates, init-project,
+apply-template, export-template, list-template-capabilities) that bootstrap
+into the selected ref's own locked tool version before running."""
 
 _INTERACTIVE_HELP = (
     "choose capabilities and answer metadata fields interactively, "
@@ -138,7 +150,7 @@ def _root_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _selection_arguments(parser: argparse.ArgumentParser) -> None:
+def _repository_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--repo",
         default=DEFAULT_REPOSITORY,
@@ -150,12 +162,16 @@ def _selection_arguments(parser: argparse.ArgumentParser) -> None:
         help="Git ref of the template monorepo to select, e.g. main or a release tag; "
         "the template contract and renderer always come from this ref",
     )
+    parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
+
+
+def _selection_arguments(parser: argparse.ArgumentParser) -> None:
+    _repository_arguments(parser)
     parser.add_argument(
         "--template",
         required=True,
-        help="template profile declared in templates.toml (e.g. common, python, go-cli, rust, node-project)",
+        help="template profile declared in templates.toml; list the valid values with list-templates",
     )
-    parser.add_argument("--source-checkout", type=Path, help=argparse.SUPPRESS)
 
 
 def _metadata_arguments(parser: argparse.ArgumentParser) -> None:
@@ -251,12 +267,23 @@ def _export_parent() -> argparse.ArgumentParser:
 def _capabilities_parent() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=False)
     _selection_arguments(parser)
+    _json_argument(parser)
+    return parser
+
+
+def _templates_parent() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
+    _repository_arguments(parser)
+    _json_argument(parser)
+    return parser
+
+
+def _json_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--json",
         action="store_true",
-        help="print the capability contract as a stable single-line JSON object for scripting",
+        help="print the contract as a stable single-line JSON object for scripting",
     )
-    return parser
 
 
 def _render_parser() -> argparse.ArgumentParser:
@@ -317,9 +344,25 @@ def _capabilities_parser() -> argparse.ArgumentParser:
     )
 
 
+def _templates_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(
+        prog="list-templates",
+        parents=[_templates_parent()],
+        description=_TEMPLATES_DESCRIPTION,
+        epilog=_TEMPLATES_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+
 def user_parsers() -> tuple[argparse.ArgumentParser, ...]:
     """Parsers of the user-facing standalone entry points, in documentation order."""
-    return (_init_parser(), _apply_parser(), _export_parser(), _capabilities_parser())
+    return (
+        _templates_parser(),
+        _init_parser(),
+        _apply_parser(),
+        _export_parser(),
+        _capabilities_parser(),
+    )
 
 
 def maintenance_parsers() -> tuple[argparse.ArgumentParser, ...]:
@@ -989,6 +1032,72 @@ def capabilities_main(argv: list[str] | None = None) -> None:
         raise SystemExit(1) from error
 
 
+def templates_main(argv: list[str] | None = None) -> None:
+    args = _templates_parser().parse_args(argv)
+    try:
+        selected = (
+            selected_template_from_source(args.repo, args.ref, args.source_checkout)
+            if args.source_checkout is not None
+            else None
+        )
+        if selected is not None:
+            _print_templates(selected, as_json=args.json)
+        else:
+            with tempfile.TemporaryDirectory(prefix="template-list-") as temporary:
+                with select_template(args.repo, args.ref, Path(temporary)) as selected:
+                    _print_templates(selected, as_json=args.json)
+    except ApplicationError as error:
+        print(f"error: {error}", file=sys.stderr)
+        raise SystemExit(1) from error
+    except subprocess.CalledProcessError as error:
+        message = error.stderr.strip() if isinstance(error.stderr, str) else ""
+        detail = f": {message}" if message else ""
+        print(
+            f"error: command failed with exit code {error.returncode}: {error.cmd}{detail}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from error
+
+
+def _print_templates(selected: SelectedTemplate, *, as_json: bool) -> None:
+    profiles = [
+        {
+            "name": template,
+            "capabilities": [
+                {"name": name, "default_enabled": default_enabled}
+                for name, default_enabled in selected.capabilities(template)
+            ],
+            "required_metadata": list(selected.required_metadata(template)),
+        }
+        for template in selected.template_names()
+    ]
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "repository": selected.repository,
+                    "ref": selected.reference,
+                    "commit": selected.commit,
+                    "templates": profiles,
+                },
+                separators=(",", ":"),
+            )
+        )
+        return
+    print(f"Repository: {selected.repository}")
+    print(f"Ref: {selected.reference}")
+    print(f"Template-Commit: {selected.commit}")
+    for profile in profiles:
+        print(f"Template: {profile['name']}")
+        capabilities = profile["capabilities"]
+        if not capabilities:
+            print("  Capability: (none)")
+        for capability in capabilities:
+            state = "enabled" if capability["default_enabled"] else "disabled"
+            print(f"  Capability: {capability['name']} (default: {state})")
+        print(f"  Required-Metadata: {', '.join(profile['required_metadata'])}")
+
+
 def _print_capabilities(
     selected: SelectedTemplate, template: str, *, as_json: bool
 ) -> None:
@@ -1066,6 +1175,14 @@ def umbrella_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers.add_parser(
+        "templates",
+        parents=[_templates_parent()],
+        help="list every declared template profile",
+        description=_TEMPLATES_DESCRIPTION,
+        epilog=_TEMPLATES_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers.add_parser(
         "capabilities",
         parents=[_capabilities_parent()],
         help="list a template's declared capabilities",
@@ -1113,6 +1230,18 @@ def main(argv: list[str] | None = None) -> None:
         if args.source_checkout is not None:
             forwarded.extend(["--source-checkout", str(args.source_checkout)])
         init_main(forwarded)
+        return
+    if args.command == "templates":
+        forwarded = ["--repo", args.repo, "--ref", args.ref]
+        if args.json:
+            forwarded.append("--json")
+        if args.source_checkout is not None:
+            forwarded.extend(["--source-checkout", str(args.source_checkout)])
+            templates_main(forwarded)
+        else:
+            from .bootstrap import templates_main as run_selected_templates
+
+            run_selected_templates(forwarded)
         return
     if args.command == "capabilities":
         forwarded = [

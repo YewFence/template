@@ -14,46 +14,50 @@ Set the launcher once and reuse it for every command below:
 TPL='uvx --from "git+https://github.com/YewFence/template.git@main#subdirectory=tools/template-tool"'
 ```
 
-`--ref main` tracks the newest contract; a release tag freezes it. Pass the same `--ref` to every command in one run, and pass it to the user when reporting what was run.
+The `#subdirectory=tools/template-tool` fragment is mandatory: the repository root is not a Python project, so a `--from` without it fails to resolve. `--ref main` tracks the newest contract; a release tag freezes it. Pass the same `--ref` to every command in one run, and pass it to the user when reporting what was run.
 
-Three decisions precede the run. The **profile** is yours to determine from the user's request and the target's shape — a Rust project gets `rust`, never `common` — with the user asked only when the evidence is genuinely ambiguous. The **capability set** belongs to the user: show every declared capability and let silence mean the default. **Metadata** is the user's to state and never yours to guess. Settle all three before running anything, because a template run is not repeatable — there is no template-upgrade contract.
+Three decisions precede the run. The **profile** is yours to determine from the user's request and the target's shape, with the user asked only when the evidence is genuinely ambiguous. The **capability set** belongs to the user: show every declared capability and let silence mean the default. **Metadata** is the user's to state and never yours to guess. Settle all three before running anything, because a template run is not repeatable — there is no template-upgrade contract.
 
-## 1. Decide the profile
+## 1. Discover the profiles this ref declares
 
-| Profile | Shape signal | Extra metadata |
-| --- | --- | --- |
-| `common` | Language-agnostic repository automation; the user brings their own language tasks, which ship as `[PLACEHOLDER]` stubs | — |
-| `python` | Python src-layout project using uv, Ruff, ty, and pytest | `python_package` |
-| `go-cli` | Go CLI with a Cobra skeleton and multi-platform release builds | `go_module`, `binary_name` |
-| `rust` | Rust CLI with a locked-by-default Cargo workflow | `cargo_package`, `binary_name` |
+Never work from a remembered profile list, and never carry one over from another ref. Ask the selected ref what it declares:
 
-Read the target repository before asking anything. Existing language sources, module files, build manifests, and the git remote usually settle it: a `pyproject.toml`-based Python project is `python`, a Go module with a Cobra command tree is `go-cli`, a `Cargo.toml` is `rust`, and a repository whose language tooling the templates do not own is `common`.
+```bash
+$TPL list-templates --ref main
+$TPL list-templates --ref main --json
+```
 
-Ask only when the evidence leaves two profiles plausible, and ask with your reading attached — "this looks like a Rust CLI, so `rust`; confirm?" beats an open question. A project that brings its own language tasks, which ship as `[PLACEHOLDER]` stubs, or uses a language none of these cover, is `common`.
+The text form prints, per profile, its declared capabilities with default state and its required metadata fields. The `--json` form is the same contract as one stable object for scripting. Read the whole list before choosing — the set of profiles changes as templates are added.
 
-**Done when** you can name one profile and the concrete evidence for it.
+**Done when** you have the ref's profile list in hand, including each profile's capabilities and required metadata fields.
 
-## 2. Collect the capability set
+## 2. Decide the profile
 
-Read what the selected ref actually declares, then show all of it to the user:
+Match the target's shape against the profiles you just read. Read the target repository before asking anything: existing language sources, module files, build manifests, and the git remote usually settle it — a `pyproject.toml`-based Python project is the Python profile, a Go module with a Cobra command tree is the Go CLI profile, a `Cargo.toml` is the Rust profile, a `package.json` with a TypeScript src layout is the Node profile. Pick the language-agnostic profile when the repository brings its own language tasks or uses a language none of the declared profiles own.
+
+Ask only when the evidence leaves two profiles plausible, and ask with your reading attached — "this looks like a Rust CLI, so the Rust profile; confirm?" beats an open question.
+
+**Done when** you can name one declared profile and the concrete evidence for it.
+
+## 3. Collect the capability set
+
+Show every capability the chosen profile declares, with its default state and what it adds. This is the decision the user always takes part in. The selected ref's contract is the only source of truth for this list — never carry a capability set from memory, from another ref, or from an earlier run. An explicit answer wins; silence means the default. Resolve the whole set before running.
 
 ```bash
 $TPL list-template-capabilities --ref main --template <profile> --json
 ```
 
-Present every declared capability with its default state and what it adds. This is the decision the user always takes part in. The selected ref's contract is the only source of truth for this list — never carry a capability set from memory, from another ref, or from an earlier run. An explicit answer wins; silence means the default. Resolve the whole set before running.
+Use this per-profile form when you want the capability contract alone; the profile list from step 1 already carries the same information.
 
 **Done when** every declared capability is either answered explicitly or covered by the user's "defaults are fine", and you have stated the resulting enable/disable overrides.
 
-## 3. Collect metadata
+## 4. Collect metadata
 
-Every required field comes from the user. The tool refuses to guess, for good reason: identity lands in the initial commit, module paths, and workflow files. You may propose candidates derived from the repository — directory name, git remote, existing module path — but each one is confirmed before use.
-
-`project_name`, `description`, `github_owner`, and `repo_name` are required by every profile; the extra fields are in the profile table. When the user answers "you decide" for a field, propose one concrete value and wait for confirmation rather than filling it in silently.
+Every required field comes from the user. The tool refuses to guess, for good reason: identity lands in the initial commit, module paths, and workflow files. Take the required field list for the chosen profile from step 1 — do not assume it. You may propose candidates derived from the repository — directory name, git remote, existing module path — but each one is confirmed before use. When the user answers "you decide" for a field, propose one concrete value and wait for confirmation rather than filling it in silently.
 
 **Done when** every field the profile requires has a value the user confirmed, with none inferred.
 
-## 4. Run the entry point that matches the target
+## 5. Run the entry point that matches the target
 
 Two entry points, two lifecycles. The target's state decides which one applies, and you say out loud which one you are running:
 
@@ -63,22 +67,20 @@ Two entry points, two lifecycles. The target's state decides which one applies, 
 ```bash
 $TPL init-project --ref main --template <profile> \
   [--enable-capability <name>]... [--disable-capability <name>]... \
-  --project-name "..." --description "..." \
-  --github-owner ... --repo-name ... \
-  [<profile extra fields>] .
+  [<profile metadata fields as options>] .
 
 $TPL apply-template --ref main --template <profile> \
   [--enable-capability <name>]... [--disable-capability <name>]... \
-  --project-name "..." --description "..." \
-  --github-owner ... --repo-name ... \
-  [<profile extra fields>] .
+  [<profile metadata fields as options>] .
 ```
+
+Each metadata field has a matching option: the field name with underscores turned into dashes, prefixed with `--` (`github_owner` → `--github-owner`), so the required field list from step 1 tells you the exact option names. `--interactive` collects the capability set and metadata as prompts instead.
 
 The preconditions are hard: a repository with commits cannot be initialized, and a repository without commits cannot receive an application. When the target satisfies neither, stop and hand the state back to the user instead of bending the target with destructive Git commands or switching entry points to make it fit.
 
 **Done when** the command exits 0 and `git status` and `git diff --cached` show the staged project.
 
-## 5. Resolve what the tool left alone
+## 6. Resolve what the tool left alone
 
 Applying skips the root paths that carry project identity — `.gitignore`, `AGENTS*`, `LICENSE*`, `NOTICE*` — and leaves every conflicting path with its index stages and worktree state intact. Both sets are yours to finish.
 
@@ -86,7 +88,7 @@ For each conflicting or skipped path, understand the **intent** on both sides be
 
 **Done when** no path keeps unresolved conflict content, and every path left untouched is reported to the user.
 
-## 6. Bootstrap and verify
+## 7. Bootstrap and verify
 
 Instantiation produces an unbootstrapped template. Generate the project's own dependency state and GitHub Action digests with the project's real commands:
 
@@ -101,11 +103,11 @@ mise run hooks:install
 mise run check
 ```
 
-Review the generated `mise.lock`, `mise.ci.lock`, language dependency state, `docs/pnpm-lock.yaml`, and pinact's workflow edits together with the project sources; they belong in the same commit. A green `mise run check` is what makes the project a bootstrapped project.
+Review the generated `mise.lock`, `mise.ci.lock`, language dependency state, the docs lockfile, and pinact's workflow edits together with the project sources; they belong in the same commit. A green `mise run check` is what makes the project a bootstrapped project.
 
 **Done when** `mise run check` passes, or you hand over the exact failing command and its output as an open problem rather than a finished run.
 
-## 7. Hand over
+## 8. Hand over
 
 The tool creates no remote and commits nothing on the user's behalf. Close by naming the project state, the profile you chose and the evidence behind it, the effective capability set, the ref that was used, and what still belongs to the user: the remote, the first push, capability secrets such as the Codecov token, and the release tag that triggers publishing.
 

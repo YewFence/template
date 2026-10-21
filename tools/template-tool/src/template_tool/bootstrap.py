@@ -12,6 +12,7 @@ from .cli import apply_main as run_apply
 from .cli import capabilities_main as run_capabilities
 from .cli import export_main as run_export
 from .cli import init_main as run_init
+from .cli import templates_main as run_templates
 
 
 def apply_main(argv: list[str] | None = None) -> None:
@@ -27,6 +28,14 @@ def capabilities_main(argv: list[str] | None = None) -> None:
         "capabilities",
         list(sys.argv[1:] if argv is None else argv),
         run_capabilities,
+    )
+
+
+def templates_main(argv: list[str] | None = None) -> None:
+    _run_selected_engine(
+        "templates",
+        list(sys.argv[1:] if argv is None else argv),
+        run_templates,
     )
 
 

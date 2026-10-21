@@ -83,9 +83,18 @@ uvx \
 
 The exported tree is an unbootstrapped template blueprint: dependency lock state and GitHub Action digests are not generated.
 
-## Query Template Capabilities
+## Query Templates and Capabilities
 
-Before applying, read the capabilities a template declares at a selected ref, with their default state:
+List every profile a ref declares, with each profile's capabilities, default state, and required metadata fields:
+
+```bash
+uvx \
+  --from "git+https://github.com/YewFence/template.git@main#subdirectory=tools/template-tool" \
+  list-templates \
+  --ref main
+```
+
+Drill into one profile's capability contract:
 
 ```bash
 uvx \
@@ -95,7 +104,7 @@ uvx \
   --template rust
 ```
 
-Add `--json` for a stable, scriptable object. The command requires explicit `--ref` and `--template`, accepts no target path or capability overrides, and does not require the current directory to be a Git repository — it only reads the selected ref's capability contract.
+Add `--json` to either command for a stable, scriptable object. Both commands require an explicit `--ref`, accept no target path or capability overrides, and do not require the current directory to be a Git repository — they only read the selected ref's contract. `list-template-capabilities` additionally requires `--template`. Prefer these commands over any list written down elsewhere: the ref is the only source of truth for which profiles and capabilities exist.
 
 ## Non-Interactive Usage
 

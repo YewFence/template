@@ -147,6 +147,6 @@ Capability selection 与 metadata 相互独立，并先于 project instantiation
 
 ## 文档所有权
 
-根 [`README.md`](../../README.md) 是模板使用者的统一入口，说明 `export-template`、`apply-template`、`init-project` 和依赖引导流程。
+根 [`README.md`](../../README.md) 是模板使用者的统一入口，说明 `list-templates`、`list-template-capabilities`、`export-template`、`apply-template`、`init-project` 和依赖引导流程。
 
 `overlays/<name>/static/README.md` 只描述对应生成项目的功能、结构和语言行为。模板维护架构、决策、计划与历史记录全部保存在根 `docs/`，不会进入生成项目。
