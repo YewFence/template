@@ -14,7 +14,7 @@ pinact = "4"
 # https://github.com/crate-ci/typos
 typos = "1.48.0"
 betterleaks = "1"
-actionlint = "1"
+jactionlint = "2"
 
 [vars]
 nllint_excludes = ""
@@ -130,9 +130,9 @@ description = "Install Git hooks managed by hk"
 run = "hk install"
 <$ slot("docs_tasks", optional=true) $>
 [tasks."actions:check"]
-description = "Run actionlint"
+description = "Run jactionlint"
 depends = ["actions:pin-offline:check"]
-run = "actionlint .github/workflows/*.yml"
+run = "jactionlint .github/workflows/*.yml"
 
 [tasks.'actions:update']
 description = "Update GitHub Action versions and pin to commit hashes"

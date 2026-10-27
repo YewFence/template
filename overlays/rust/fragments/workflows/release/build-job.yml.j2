@@ -4,6 +4,8 @@
     needs: version
     if: ${{ needs.version.outputs.should_release == 'true' }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    cache-mode: none
     strategy:
       fail-fast: false
       matrix:

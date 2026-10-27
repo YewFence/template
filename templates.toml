@@ -219,6 +219,7 @@ hints = [
  [templates.go-cli.slots.".github/workflows/release.yml"]
  build_job = ["overlay:workflows/release/build-job.yml.j2"]
  release_needs = ["shared:workflows/release/version-and-build.j2"]
+ version_output = ["shared:workflows/release/version-output.j2"]
  release_artifact_download = ["overlay:workflows/release/download-artifacts.yml.j2"]
  release_files = ["shared:workflows/release/files.yml.j2"]
  publish_container_job = { capability = "container-image-publish", fragments = ["overlay:workflows/release/publish-container-job.yml.j2"] }
@@ -320,6 +321,7 @@ hints = [
  [templates.rust.slots.".github/workflows/release.yml"]
  build_job = ["overlay:workflows/release/build-job.yml.j2"]
  release_needs = ["shared:workflows/release/version-and-build.j2"]
+ version_output = { capability = "crates-io-publish", fragments = ["shared:workflows/release/version-output.j2"] }
  release_artifact_download = ["overlay:workflows/release/download-artifacts.yml.j2"]
  release_files = ["shared:workflows/release/files.yml.j2"]
  publish_crate_job = { capability = "crates-io-publish", fragments = ["overlay:workflows/release/publish-crate-job.yml.j2"] }
@@ -397,6 +399,7 @@ hints = [
  release_files_update = ["overlay:workflows/prepare-release/update-files.yml.j2"]
  [templates.node-project.slots.".github/workflows/release.yml"]
  release_needs = ["shared:workflows/release/version-only.j2"]
+ version_output = { capability = "npm-publish", fragments = ["shared:workflows/release/version-output.j2"] }
  publish_npm_job = { capability = "npm-publish", fragments = ["overlay:workflows/release/publish-npm-job.yml.j2"] }
  [templates.node-project.paths]
  ".github/workflows/docs.yml" = "overlay"

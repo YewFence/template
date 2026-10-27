@@ -4,6 +4,8 @@
     runs-on: ubuntu-latest
     needs: version
     if: ${{ needs.version.outputs.should_release == 'true' }}
+    timeout-minutes: 20
+    cache-mode: none
     env:
       MISE_TASK_RUN_AUTO_INSTALL: "false"
       MISE_LOCKED: "1"

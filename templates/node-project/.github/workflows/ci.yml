@@ -18,6 +18,7 @@ jobs:
   check:
     name: Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       MISE_TASK_RUN_AUTO_INSTALL: "false"
       MISE_LOCKED: "1"
@@ -42,6 +43,7 @@ jobs:
   docs:
     name: Docs
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       MISE_TASK_RUN_AUTO_INSTALL: "false"
       MISE_LOCKED: "1"

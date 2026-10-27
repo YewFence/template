@@ -29,6 +29,7 @@ jobs:
   version:
     name: Resolve Version
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: >-
       github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
@@ -40,8 +41,7 @@ jobs:
       )
     outputs:
       tag: ${{ steps.release.outputs.tag }}
-      version: ${{ steps.release.outputs.version }}
-      checkout_ref: ${{ steps.release.outputs.checkout_ref }}
+<$ slot("version_output", optional=true) $>      checkout_ref: ${{ steps.release.outputs.checkout_ref }}
       should_release: ${{ steps.release.outputs.should_release }}
       allow_tag_creation: ${{ steps.release.outputs.allow_tag_creation }}
       prerelease: ${{ steps.release.outputs.prerelease }}
@@ -159,7 +159,7 @@ jobs:
             exit 1
           fi
 
-          parent_count="$(git show -s --format=%P "${MERGE_COMMIT_SHA}" | wc -w)"
+          parent_count="$(set -o pipefail; git show -s --format=%P "${MERGE_COMMIT_SHA}" | wc -w)"
           if [[ "${parent_count}" -lt 1 ]]; then
             echo "release commit has no parent, so the release base cannot be validated"
             exit 1
@@ -198,6 +198,8 @@ jobs:
     needs: <$ slot("release_needs") | trim $>
     if: ${{ needs.version.outputs.should_release == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    cache-mode: none
     concurrency:
       group: github-release-${{ needs.version.outputs.tag }}
       cancel-in-progress: false
@@ -279,6 +281,7 @@ jobs:
         github.event_name == 'workflow_dispatch'
       )
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: write

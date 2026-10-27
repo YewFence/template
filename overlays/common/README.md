@@ -7,7 +7,7 @@ Rendered default-capability preview: [`templates/common/`](../../templates/commo
 ## What's Included
 
 - The complete shared tooling: mise-managed tasks, GitHub Actions CI, git-cliff release automation, Renovate, and hk Git hooks — see the [root README](../../README.md#features)
-- Language-neutral checks that work out of the box: nllint newline lint, typos spell checking, betterleaks secret scanning, and actionlint workflow lint
+- Language-neutral checks that work out of the box: nllint newline lint, typos spell checking, betterleaks secret scanning, and jactionlint workflow lint
 
 ## Capabilities
 

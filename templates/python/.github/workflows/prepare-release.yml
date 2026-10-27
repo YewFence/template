@@ -8,9 +8,7 @@ on:
       - CHANGELOG.md
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 concurrency:
   group: prepare-release
@@ -20,6 +18,10 @@ jobs:
   prepare:
     name: Prepare Release PR
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
     env:
       MISE_TASK_RUN_AUTO_INSTALL: "false"
       MISE_LOCKED: "1"

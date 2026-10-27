@@ -4,6 +4,8 @@
     needs: [version, build, release]
     if: ${{ needs.version.outputs.should_release == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    cache-mode: none
     environment: crates-io
     permissions:
       contents: read
