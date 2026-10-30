@@ -27,7 +27,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           install_args: pinact
