@@ -11,11 +11,7 @@
     ".github/**",
     "mise.toml",
     "mise.lock",
-    "templates.toml",
-    "tools/**",
-    "shared/**",
-    "config/**",
-    "overlays/**"
+    "tools/**"
   ],
   "ignorePaths": ["templates/**"]
 }
