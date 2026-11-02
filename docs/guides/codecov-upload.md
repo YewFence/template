@@ -41,7 +41,7 @@ After project instantiation, generate the project's mise locks and Action digest
 
 ```bash
 mise -E ci lock
-mise install --locked
+mise install
 mise run actions:update
 ```
 

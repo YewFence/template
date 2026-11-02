@@ -95,7 +95,7 @@ Instantiation produces an unbootstrapped template. Generate the project's own de
 ```bash
 mise trust
 mise -E ci lock
-mise install --locked
+mise install
 mise run deps:update
 mise run docs:install   # only with the docs-site capability
 mise run actions:update

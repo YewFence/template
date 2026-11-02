@@ -54,7 +54,7 @@ The tool asks which capabilities to enable and for the template's metadata field
 ```bash
 mise trust
 mise -E ci lock
-mise install --locked
+mise install
 mise run deps:update
 mise run docs:install
 mise run actions:update

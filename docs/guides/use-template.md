@@ -33,7 +33,7 @@ After instantiation, generate and commit the project's own dependency lock state
 ```bash
 mise trust
 mise -E ci lock
-mise install --locked
+mise install
 mise run deps:update
 mise run docs:install   # exists when the docs-site capability is enabled
 mise run actions:update
